@@ -29,6 +29,7 @@ function sourceFor(state, item, quantity, options = {}) {
     return {
         id: `review-${nextId++}`,
         target_item: item,
+        standalone: options.standalone === true,
         output_per_minute: quantity,
         recipe_choice: recipeChoice,
         building: options.building ?? setting.建筑,
@@ -122,7 +123,9 @@ describe('independent multi-source numerical review', () => {
         state.settings.production_sources = [sourceFor(state, '铜块', 0)];
         const actual = state.calculate({'铁块': 60});
         expect(actual.slice(0, 2)).toEqual(expected.slice(0, 2));
-        expect(actual[2].sources).toHaveLength(1);
+        expect(actual[2].sources).toHaveLength(0);
+        expect(actual[2].paused_sources).toHaveLength(1);
+        expect(actual[2].paused_sources[0].target_item).toBe('铜块');
     });
 
     it.each([
@@ -217,9 +220,9 @@ describe('independent multi-source numerical review', () => {
         balanced(details);
     });
 
-    it('counts manual input requirements even for an unrelated, overproduced item', () => {
+    it('counts standalone manual input requirements even for an unrelated, overproduced item', () => {
         const {state} = createScenario(api, {});
-        state.settings.production_sources = [sourceFor(state, '铜块', 30)];
+        state.settings.production_sources = [sourceFor(state, '铜块', 30, {standalone: true})];
         const [automatic, surplus, details] = state.calculate({'铁块': 60});
         close(automatic.铁块, 60, 'requested iron');
         close(automatic.铜矿, 30, 'manual copper inputs');
@@ -413,7 +416,7 @@ describe('independent full-LP objective review', () => {
     it('honors a high item-cost override when choosing whether to overproduce a coproduct route', () => {
         const state = costScenario();
         Object.assign(state.scheme_data.cost_weight.物品额外成本.铁块, {启用: 1, 额外成本: 100, 与其它成本累计: 0});
-        state.settings.production_sources = [sourceFor(state, '齿轮', 1)];
+        state.settings.production_sources = [sourceFor(state, '齿轮', 1, {standalone: true})];
         const [automatic, surplus, details] = state.calculate({'铜块': 10});
         close(automatic.铁块, 1, 'only required coproduct iron');
         close(automatic.铜块, 9, 'remaining copper direct');
@@ -427,7 +430,7 @@ describe('independent full-LP objective review', () => {
         Object.assign(state.scheme_data.cost_weight.物品额外成本.铁块, {
             启用: 1, 额外成本: 0.01, 与其它成本累计: 0, 溢出时处理成本: 100,
         });
-        state.settings.production_sources = [sourceFor(state, '齿轮', 1)];
+        state.settings.production_sources = [sourceFor(state, '齿轮', 1, {standalone: true})];
         const [automatic, surplus, details] = state.calculate({'铜块': 10});
         close(automatic.铁块, 1, 'avoid disposing nine unnecessary iron');
         close(automatic.铜块, 9, 'make copper directly');

@@ -2,7 +2,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {GameInfo, GlobalState} from '../src/global_state.jsx';
 import {get_game_data} from '../src/GameData.jsx';
 import {init_scheme_data} from '../src/scheme_data.jsx';
-import {createProductionSource, fromDisplayRate, migrateLegacyProductionSources, productionSourceNode, toDisplayRate} from '../src/production_sources.js';
+import {createProductionSource, fromDisplayRate, migrateLegacyProductionSources, productionSourceNode, toDisplayRate, isItemRequired} from '../src/production_sources.js';
 import {createScenario} from './helpers/solver-cases.js';
 
 const api = {GameInfo, GlobalState, get_game_data, init_scheme_data};
@@ -18,6 +18,92 @@ function balances(details) {
 
 beforeEach(() => vi.spyOn(console, 'log').mockImplementation(() => {}));
 afterEach(() => vi.restoreAllMocks());
+
+describe('source activation follows current targets', () => {
+    it('pauses saved bound sources with no targets without deleting or running them', () => {
+        const base = make();
+        const saved = sourceFor(base, '重氢', 150);
+        delete saved.standalone; // Untagged records from previous saved versions.
+        const state = withSources(base, [saved]);
+        const before = structuredClone(state.settings.production_sources);
+        const [auto, surplus, details] = state.calculate({});
+        expect([auto, surplus]).toEqual(base.calculate({}));
+        expect(details.sources).toEqual([]);
+        expect(details.paused_sources).toEqual([{...saved, standalone: false}]);
+        expect(details.totals.buildingCounts).toEqual({});
+        expect(details.totals.rawMaterials).toEqual({});
+        expect(details.totals.totalEnergyCost).toBe(0);
+        expect(state.settings.production_sources).toEqual(before);
+    });
+
+    it('reactivates the same allocation when its parent target returns', () => {
+        const base = make();
+        const state = withSources(base, [sourceFor(base, '重氢', 150)]);
+        expect(state.calculate({})[2].paused_sources).toHaveLength(1);
+        const [auto, , details] = state.calculate({'引力矩阵': 60});
+        expect(details.paused_sources).toEqual([]);
+        expect(details.sources).toHaveLength(1);
+        expect(auto.重氢).toBeCloseTo(150, 7);
+        expect(details.groups.重氢.required).toBeCloseTo(300, 7);
+        expect(details.groups.重氢.allocated).toBeCloseTo(150, 7);
+        balances(details);
+    });
+
+    it('runs an explicitly standalone source with no targets', () => {
+        const base = make();
+        const source = {...createProductionSource(base, '重氢', {standalone: true}), output_per_minute: 150};
+        const [, surplus, details] = withSources(base, [source]).calculate({});
+        expect(details.paused_sources).toEqual([]);
+        expect(details.sources[0].output).toBeCloseTo(150, 7);
+        expect(details.sources[0].inputs.氢).toBeCloseTo(300, 7);
+        expect(surplus.重氢).toBeCloseTo(150, 7);
+        expect(details.totals.totalEnergyCost).toBeGreaterThan(0);
+        balances(details);
+    });
+
+    it('does not activate a bound source for an unrelated target or a zero LP key', () => {
+        const base = make();
+        const source = sourceFor(base, '重氢', 150);
+        const [auto, surplus, details] = withSources(base, [source]).calculate({'铁块': 60});
+        expect([auto, surplus]).toEqual(base.calculate({'铁块': 60}));
+        expect(details.sources).toEqual([]);
+        expect(details.paused_sources[0].id).toBe(source.id);
+        expect(isItemRequired(base, {}, '氢')).toBe(false);
+        expect(isItemRequired(base, {'铁块': 60}, '重氢')).toBe(false);
+        expect(isItemRequired(base, {'引力矩阵': 60}, '重氢')).toBe(true);
+    });
+
+    it('keeps a bound source active when coproducts cover its downstream demand', () => {
+        const base = make();
+        const needs = {'反物质': 60, '重氢': 30};
+        expect(base.calculate(needs)[0].氢).toBe(0);
+        expect(isItemRequired(base, needs, '氢')).toBe(true);
+        const [, , details] = withSources(base, [sourceFor(base, '氢', 30)]).calculate(needs);
+        expect(details.sources).toHaveLength(1);
+        expect(details.paused_sources).toEqual([]);
+        expect(details.groups.氢.required).toBeGreaterThan(0);
+        balances(details);
+    });
+
+    it('shows invalid source errors even when their target is no longer needed', () => {
+        const base = make();
+        const source = {...sourceFor(base, '重氢', 150), recipe_choice: 999};
+        const [, , details] = withSources(base, [source]).calculate({});
+        expect(details.sources[0].error).toBeTruthy();
+        expect(details.sources[0].output).toBe(0);
+        expect(details.paused_sources).toEqual([]);
+    });
+
+    it('does not infer standalone intent from migrated fixed-building lines', () => {
+        const base = make();
+        const source = migrateLegacyProductionSources(base, [{目标物品: '重氢', 配方id: 1, 建筑: 0, 建筑数量: 2, 增产点数: 0, 增产模式: 0}])[0];
+        expect(source.standalone).toBe(false);
+        const [, , details] = withSources(base, [source]).calculate({});
+        expect(details.sources).toEqual([]);
+        expect(details.paused_sources[0].output_per_minute).toBe(240);
+        expect(withSources(base, [{...source, standalone: true}]).calculate({})[2].sources[0].output).toBe(240);
+    });
+});
 
 describe('independent production allocations', () => {
     it('starts a source at zero without changing the numerical result', () => {

@@ -456,6 +456,11 @@ export class GlobalState {
         return item_price;
     }
 
+    /** Automatic-only demand baseline for source activation and UI intent. */
+    calculateBaseline(needs_list) {
+        return this.#calculateLegacy(needs_list, true);
+    }
+
     /** Keep the original numerical path untouched for existing plans. */
     calculate(needs_list) {
         if (!this.settings.production_sources?.length) return this.#calculateLegacy(needs_list);

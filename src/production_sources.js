@@ -13,19 +13,33 @@ export function fromDisplayRate(displayRate, settings) {
     return Number(displayRate) * (settings.is_time_unit_minute ? 1 : 60);
 }
 
-export function createProductionSource(state, item) {
+export function createProductionSource(state, item, {standalone = false} = {}) {
     const choice = state.scheme_data.item_recipe_choices[item] || 1;
     const recipeId = Object.hasOwn(state.item_data, item) ? state.item_data[item]?.[choice] : undefined;
     const config = state.scheme_data.scheme_for_recipe[recipeId] || {};
     return {
         id: globalThis.crypto?.randomUUID?.() || `source-${Date.now()}-${++nextSourceId}`,
         target_item: item,
+        standalone: standalone === true,
         output_per_minute: 0,
         recipe_choice: choice,
         building: Number(config.建筑) || 0,
         proliferator_mode: Number(config.增产模式) || 0,
         proliferator_points: Number(config.增产点数) || 0,
     };
+}
+
+/**
+ * Bound sources follow actual demand, never stale zero-valued LP result keys.
+ * A coproduct-covered item can still be required by a downstream recipe even
+ * when its own automatic production is zero.
+ */
+export function isItemRequired(state, needs, item, baselineProduction) {
+    if (!Object.hasOwn(state.item_data, item)) return false;
+    if (Number(needs[item]) > EPSILON) return true;
+    const production = baselineProduction || state.calculateBaseline(needs)[0];
+    return Object.entries(production).some(([product, amount]) =>
+        Number(amount) > EPSILON && Number(state.item_graph[product]?.原料[item]) * Number(amount) > EPSILON);
 }
 
 function add(dict, item, amount) {
@@ -147,6 +161,7 @@ export function migrateLegacyProductionSources(state, legacyLines = state.settin
         const source = {
             id: `legacy-source-${index}-${line.目标物品 || 'unknown'}`,
             target_item: line.目标物品,
+            standalone: line.standalone === true,
             output_per_minute: 0,
             recipe_choice: Number(line.配方id),
             building: Number(line.建筑),
@@ -340,8 +355,8 @@ function solveCompatibleBalances(needs, nodes, sources, fixed, solveCompatible) 
 export function calculateProductionSources(state, needs, legacy, solveCompatible) {
     const sources = (Array.isArray(state.settings.production_sources) ? state.settings.production_sources : []).filter(Boolean);
     const errors = [];
-    const sourceResults = sources.map((source, index) => {
-        const safe = {...source, id: source.id || `source-${index}`};
+    const savedSourceResults = sources.map((source, index) => {
+        const safe = {...source, id: source.id || `source-${index}`, standalone: source.standalone === true};
         try {
             if (safe.migration_error) throw new Error(safe.migration_error);
             const rate = Number(source.output_per_minute);
@@ -352,6 +367,18 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
             return sourceResult(state, safe, null, 0, error.message);
         }
     });
+    const sourceResults = [];
+    const pausedSources = [];
+    for (const [index, source] of savedSourceResults.entries()) {
+        if (source.error || source.standalone || isItemRequired(state, needs, source.target_item, legacy[0])) {
+            sourceResults.push(source);
+        } else {
+            // Keep every saved setting and the canonical allocation. Pausing is
+            // derived from the current targets and never erases a saved source.
+            const stored = sources[index];
+            pausedSources.push({...stored, id: source.id, standalone: false});
+        }
+    }
     // Mixed older/newer settings remain safe while callers migrate their saves.
     const legacyResults = migrateLegacyProductionSources(state).map(source => {
         try {
@@ -480,6 +507,6 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
     if (overflow) errors.push('产量合计超出可表示范围，统计结果无效；请减小产量');
     const order = [...new Set([...Object.keys(legacy[0]), ...Object.keys(result), ...sourceResults.map(source => source.target_item)])]
         .filter(item => Object.hasOwn(state.item_data, item));
-    const details = {sources: sourceResults, legacy_sources: legacyResults, automatic, groups, totals, order, item_order: order, errors, valid: errors.length === 0 && sourceResults.every(source => !source.error)};
+    const details = {sources: sourceResults, paused_sources: pausedSources, legacy_sources: legacyResults, automatic, groups, totals, order, item_order: order, errors, valid: errors.length === 0 && sourceResults.every(source => !source.error)};
     return [result, surplus, details];
 }

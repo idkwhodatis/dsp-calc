@@ -60,7 +60,7 @@ describe('compact production overview', () => {
         const row = amount.closest('tr');
         expect(row.querySelector('.dsp-item-name')).toHaveClass('sr-only');
         expect(row.querySelector('.dsp-item-name')).toHaveTextContent('铁块');
-        expect(within(row).getAllByRole('cell')).toHaveLength(8);
+        expect(within(row).getAllByRole('cell')).toHaveLength(9);
         for (const cell of within(row).getAllByRole('cell')) expect(cell).toHaveClass('px-2', 'py-3');
         expect(within(row).getByRole('button', {name: '位面熔炉'})).toHaveClass('min-h-8', 'min-w-7', 'py-1');
     });
@@ -104,16 +104,16 @@ describe('compact production overview', () => {
         });
     });
 
-    it('keeps a complex quantum-chip production chain content-sized with all eight controls columns', () => {
+    it('keeps a complex quantum-chip production chain content-sized with all controls and a narrow logistics column', () => {
         const {container} = render(<Overview mode="compact" initialNeeds={{'量子芯片': 60}}/>);
         const table = container.querySelector('.dsp-production-table');
         expect(table).toHaveClass('w-auto');
         expect(within(table).getAllByRole('row').length).toBeGreaterThan(20);
-        expect(within(table).getAllByRole('columnheader')).toHaveLength(8);
+        expect(within(table).getAllByRole('columnheader')).toHaveLength(9);
         expect(screen.getByRole('textbox', {name: '量子芯片产能，等比例调整需求'})).toHaveValue('60.00');
         expect(container.querySelector('.dsp-result-summary')).toHaveClass('max-w-80');
         for (const row of table.querySelectorAll('tbody > tr')) {
-            expect(within(row).getAllByRole('cell')).toHaveLength(8);
+            expect(within(row).getAllByRole('cell')).toHaveLength(9);
         }
         for (const recipe of container.querySelectorAll('.dsp-compact-recipe')) {
             expect(recipe).toHaveClass('w-max', 'max-w-32');
@@ -167,7 +167,7 @@ describe('compact production overview', () => {
 
     it('retains 30px migrated-source factory icons and 32px desktop selectors inside the product group', () => {
         localStorage.setItem('auto_settings', JSON.stringify({natural_production_line: [{'目标物品': '铁块', '建筑数量': 10, '配方id': 1, '增产点数': 0, '增产模式': 0, '建筑': 0}]}));
-        render(<Overview mode="full" initialNeeds={{}}/>);
+        render(<Overview mode="full" initialNeeds={{'铁块': 600}}/>);
         const group = screen.getByRole('region', {name: '铁块生产来源'});
         const card = within(group).getByRole('article', {name: '铁块手动产线 1'});
         expect(within(card).getByRole('textbox', {name: '铁块手动产线 1分配产量'})).toHaveValue('600.00');
@@ -181,7 +181,7 @@ describe('compact production overview', () => {
         const user = userEvent.setup();
         render(<Overview mode="mobile"/>);
         expect(screen.getByText('左右滑动表格，查看配方与生产设置')).toBeInTheDocument();
-        expect(screen.getAllByRole('columnheader')).toHaveLength(8);
+        expect(screen.getAllByRole('columnheader')).toHaveLength(9);
         const amount = screen.getByRole('textbox', {name: '铁块产能，等比例调整需求'});
         await user.clear(amount);
         await user.type(amount, '120');

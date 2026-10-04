@@ -84,7 +84,7 @@ describe('horizontal overview information and behavior parity', () => {
             expect(quantitySnapshot()).toEqual(quantities);
             expect(controlSnapshot()).toEqual(controls);
             const scroll = screen.getByRole('region', {name: '生产结果表，可横向滚动'});
-            expect(within(scroll).getAllByRole('columnheader')).toHaveLength(8);
+            expect(within(scroll).getAllByRole('columnheader')).toHaveLength(9);
             expect(scroll.querySelectorAll('tbody > tr')).toHaveLength(28);
             const quantumRow = screen.getByRole('textbox', {name: '量子芯片产能，等比例调整需求'}).closest('tr');
             const recipeButton = within(quantumRow).getByRole('button', {name: '量子芯片配方 1', exact: true});

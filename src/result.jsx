@@ -1,7 +1,7 @@
 import {useContext, useMemo, useState, useEffect} from 'react';
 import {CompactModeContext, GlobalStateContext, SchemeDataSetterContext, SettingsSetterContext} from './contexts';
 import {ItemIcon} from './icon';
-import {ProductionSourceCard, ProductionSourceGroup} from './natural_production_line';
+import {PausedProductionSources, ProductionSourceCard, ProductionSourceGroup} from './natural_production_line';
 import {createProductionSource, fromDisplayRate, getProductionEnergy, isMiningBuilding} from './production_sources.js';
 import {describeRecipe, HorizontalMultiButtonSelect, Recipe} from './recipe';
 import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
@@ -11,6 +11,8 @@ import {Card, CardContent, CardHeader, CardTitle} from './components/ui/card';
 import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle} from './components/ui/dialog';
 import {Tooltip, TooltipContent, TooltipTrigger} from './components/ui/tooltip';
 import {cn} from './lib/utils';
+import {estimateLogistics} from './logistics.js';
+import {LogisticsOverview} from './logistics_overview.jsx';
 
 const ValueWithDifference = ({currentValue, previousValue}) => {
     const global_state = useContext(GlobalStateContext);
@@ -295,7 +297,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     const ordered_items = [...new Set([...(source_details?.order || Object.keys(result_dict)), ...Object.keys(source_groups)])];
 
     function add_source(item) {
-        const source = createProductionSource(global_state, item);
+        const standalone = production_sources.some(source => source.target_item === item && source.standalone);
+        const source = createProductionSource(global_state, item, {standalone});
         set_settings(previous => ({production_sources: [...(previous.production_sources || []), source]}));
     }
 
@@ -363,6 +366,9 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         };
 
         const ratioProps = {fixed_num, needs_list, set_needs_list};
+        const logistics = estimateLogistics(global_state, i, {automaticOutput: automatic_amount, manualSources: item_sources,
+            byproductSupply: Object.values(side_products[i]).reduce((sum, amount) => sum + amount, 0)});
+        const logisticsCell = <td className="dsp-logistics-cell w-24 px-2 py-3"><LogisticsOverview item={i} estimate={logistics}/></td>;
         if (item_sources.length > 0) {
             const group = source_groups[i];
             const automatic_scheme = scheme_data.scheme_for_recipe[recipe_id];
@@ -395,6 +401,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                             onRemove={() => remove_source(source.id)}/>)}
                     </ProductionSourceGroup>
                 </td>
+                {logisticsCell}
             </tr>);
             continue;
         }
@@ -426,6 +433,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
             <td className="px-2 py-3"><ProModeSelect recipe_id={recipe_id} onChange={change_pro_mode} choice={scheme_data.scheme_for_recipe[recipe_id]["增产模式"]}/></td>
             <td className="px-2 py-3"><ProNumSelect onChange={change_pro_num} choice={scheme_data.scheme_for_recipe[recipe_id]["增产点数"]} icon_size={mob_btn_icon}/></td>
             <td className="px-2 py-3"><FactorySelect recipe_id={recipe_id} onChange={change_factory} choice={scheme_data.scheme_for_recipe[recipe_id]["建筑"]} icon_size={mob_btn_icon}/></td>
+            {logisticsCell}
         </tr>);
     }
 
@@ -554,6 +562,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                 <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-sm" onClick={() => set_show_building_popup(true)}>建筑与需求</Button>
             </div>
         </div>
+        <PausedProductionSources sources={source_details?.paused_sources}
+            onEnable={id => update_source(id, {standalone: true})} onRemove={remove_source}/>
         {(source_details?.errors?.length > 0 || production_sources.some(source => !has_item(source.target_item))) && <div role="alert" className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-base text-destructive">
             {(source_details.errors || []).map((error, index) => <p key={index}>{typeof error === 'string' ? error : error.message || String(error)}</p>)}
             {production_sources.filter(source => !has_item(source.target_item)).map(source => <Button key={source.id} type="button" variant="outline" size="sm"
@@ -564,17 +574,18 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                 <p className="border-b bg-muted/20 px-2 py-2 text-sm text-muted-foreground lg:hidden">左右滑动表格，查看配方与生产设置</p>
                 <div className="dsp-result-table-scroll max-h-[70dvh] max-w-full overflow-auto" tabIndex={0} role="region" aria-label="生产结果表，可横向滚动">
                     <table className="dsp-production-table w-auto border-collapse text-base [&_td]:align-middle">
-                        <caption className="sr-only">生产链计算结果：产能、工厂、配方和增产设置</caption>
+                        <caption className="sr-only">生产链计算结果：产能、工厂、配方、增产设置和物流估算</caption>
                         <thead className="sticky top-0 z-10 border-b bg-muted shadow-[0_1px_0_var(--border)]">
                             <tr className="text-left text-base whitespace-nowrap text-muted-foreground">
                                 <th scope="col" className="px-2 py-3 font-medium">操作</th><th scope="col" className="px-2 py-3 font-medium">物品</th>
                                 <th scope="col" className="px-2 py-3 text-right font-medium">产能 / {unit}</th><th scope="col" className="px-2 py-3 font-medium">工厂数量</th>
                                 <th scope="col" className="px-2 py-3 font-medium">配方选取</th><th scope="col" className="px-2 py-3 font-medium">增产模式</th>
                                 <th scope="col" className="px-2 py-3 font-medium">增产剂</th><th scope="col" className="px-2 py-3 font-medium">工厂类型</th>
+                                <th scope="col" className="w-24 px-2 py-3 font-medium">物流估算</th>
                             </tr>
                         </thead>
                         <tbody>{result_table_rows}
-                            {result_table_rows.length === 0 && <tr><td colSpan={8} className="px-4 py-20 text-center">
+                            {result_table_rows.length === 0 && <tr><td colSpan={9} className="px-4 py-20 text-center">
                                 <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl border bg-muted/40 text-lg text-muted-foreground" aria-hidden="true">＋</div>
                                 <p className="text-sm font-medium">开始规划你的生产线</p><p className="mt-1.5 text-sm text-muted-foreground">添加目标物品与需求数量，查看完整的生产链与建筑需求</p>
                             </td></tr>}

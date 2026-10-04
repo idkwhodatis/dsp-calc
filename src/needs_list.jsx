@@ -8,7 +8,7 @@ import {Input} from './components/ui/input';
 import {Label} from './components/ui/label';
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from './components/ui/dialog';
 import {SavedPresets} from './components/saved-presets.jsx';
-import {createProductionSource} from './production_sources.js';
+import {createProductionSource, isItemRequired} from './production_sources.js';
 
 function isPositiveNumber(value) {
     return String(value).trim() !== '' && Number.isFinite(Number(value)) && Number(value) > 0;
@@ -72,7 +72,9 @@ export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_s
     }
 
     function add_npl(item) {
-        const source = createProductionSource(global_state, item);
+        // An explicitly added unrelated line is an independent existing plant.
+        // A split of a required intermediate follows that demand plan instead.
+        const source = createProductionSource(global_state, item, {standalone: !isItemRequired(global_state, needs_list, item)});
         set_settings(previous => ({production_sources: [...(previous.production_sources || []), source]}));
         setSourceStatus(`已为${item}添加产量为 0 的来源，请在生产总览的同物品分组中设置。`);
         setLastSourceItem(item);

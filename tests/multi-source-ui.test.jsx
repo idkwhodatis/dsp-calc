@@ -212,13 +212,60 @@ describe('product-grouped independent source cards', () => {
         expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('150.00');
     });
 
-    it('keeps a zero-only product editable when there is no target demand', () => {
-        seed([source('铁块')]);
+    it('keeps an explicitly independent zero-only product editable when there is no target demand', () => {
+        seed([source('铁块', 0, 'standalone-iron', {standalone: true})]);
         render(<Overview initialNeeds={{}}/>);
         expect(screen.getByLabelText('铁块总需求')).toHaveTextContent(/^0.00$/);
         expect(within(auto('铁块')).getByLabelText('铁块自动产线产量')).toHaveTextContent(/^0.00$/);
         expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('0.00');
         expect(screen.queryByText('开始规划你的生产线')).not.toBeInTheDocument();
+    });
+
+    it('keeps unrelated saved sources paused without phantom hydrogen or deuterium rows after reload', () => {
+        seed([source('重氢', 150), source('氢', 30, 'hydrogen')]);
+        const first = render(<Overview initialNeeds={{'铁块': 60}}/>);
+        expect(productOrder()).not.toContain('重氢');
+        expect(productOrder()).not.toContain('氢');
+        const status = screen.getByText('已暂停2条未被当前需求使用的来源').closest('details');
+        expect(status).not.toHaveAttribute('open');
+        expect(screen.queryByRole('article', {name: '重氢手动产线 1'})).not.toBeInTheDocument();
+        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources).toHaveLength(2);
+        first.unmount();
+        render(<Overview initialNeeds={{'铁块': 60}}/>);
+        expect(productOrder()).not.toContain('重氢');
+        expect(productOrder()).not.toContain('氢');
+        expect(screen.getByText('已暂停2条未被当前需求使用的来源')).toBeInTheDocument();
+    });
+
+    it('shows saved rates and lets a paused source become independent, survive reload, and pass that intent to an added source', async () => {
+        const user = userEvent.setup();
+        seed([source('铁块', 60)]);
+        const first = render(<Overview initialNeeds={{}}/>);
+        await user.click(screen.getByText('已暂停1条未被当前需求使用的来源'));
+        expect(screen.getByText('铁块 · 60.00 / min')).toBeVisible();
+        await user.click(screen.getByRole('button', {name: '作为独立产线启用'}));
+        expect(screen.queryByText(/已暂停.*条未被当前需求使用的来源/)).not.toBeInTheDocument();
+        expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('60.00');
+        await user.click(screen.getByRole('button', {name: '添加铁块产线'}));
+        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources.every(source => source.standalone)).toBe(true);
+        first.unmount();
+        render(<Overview initialNeeds={{}}/>);
+        expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('60.00');
+        expect(manual('铁块', 2)).toBeInTheDocument();
+    });
+
+    it('can remove a paused source and converts its displayed rate without changing its saved allocation', async () => {
+        const user = userEvent.setup();
+        seed([source('铁块', 150)]);
+        render(<Overview initialNeeds={{}}/>);
+        await user.click(screen.getByText('已暂停1条未被当前需求使用的来源'));
+        await user.click(screen.getByRole('button', {name: '显示每秒'}));
+        expect(screen.getByText('铁块 · 2.50 / s')).toBeVisible();
+        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources[0].output_per_minute).toBe(150);
+        await user.click(screen.getByRole('button', {name: '删除已暂停来源 1 铁块'}));
+        expect(screen.queryByText(/已暂停.*条未被当前需求使用的来源/)).not.toBeInTheDocument();
+        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources).toHaveLength(0);
+        expect(screen.getByText('开始规划你的生产线')).toBeInTheDocument();
     });
 
     it.each(['已删除的物品', '__proto__', 'constructor'])('surfaces unknown saved target %s and allows removing it', async item => {

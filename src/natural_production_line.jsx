@@ -6,6 +6,35 @@ import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
 import {Button} from './components/ui/button';
 import {Badge} from './components/ui/badge';
 import {cn} from './lib/utils';
+import {toDisplayRate} from './production_sources.js';
+
+/** Saved demand-bound allocations remain available without creating phantom rows. */
+export function PausedProductionSources({sources, onEnable, onRemove}) {
+    const {settings} = useContext(GlobalStateContext);
+    if (!sources?.length) return null;
+    const unit = settings.is_time_unit_minute ? 'min' : 's';
+    return <details className="dsp-paused-sources rounded-lg border bg-muted/20 px-3 py-2 text-base">
+        <summary className="cursor-pointer rounded-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring">
+            已暂停{sources.length}条未被当前需求使用的来源
+        </summary>
+        <div className="mt-3 space-y-2">
+            <p className="text-base text-muted-foreground">配方与分配产量已保留；再次需要该物品时自动恢复，也可作为独立产线启用</p>
+            <ul className="space-y-2">
+                {sources.map((source, index) => <li key={source.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border bg-background px-2 py-2"
+                    aria-label={`已暂停来源 ${index + 1} ${source.target_item}`}>
+                    <span className="inline-flex items-center gap-2"><ItemIcon item={source.target_item} size={24}/>
+                        <span>{source.target_item} · {toDisplayRate(source.output_per_minute, settings).toFixed(settings.fixed_num)} / {unit}</span>
+                    </span>
+                    <span className="inline-flex flex-wrap items-center gap-2">
+                        <Button type="button" variant="outline" size="sm" className="text-base" onClick={() => onEnable(source.id)}>作为独立产线启用</Button>
+                        <Button type="button" variant="ghost" size="sm" className="text-base text-muted-foreground hover:text-destructive"
+                            aria-label={`删除已暂停来源 ${index + 1} ${source.target_item}`} onClick={() => onRemove(source.id)}>删除</Button>
+                    </span>
+                </li>)}
+            </ul>
+        </div>
+    </details>;
+}
 
 /** A production source owns its own recipe and equipment, but stays in its product group. */
 export function ProductionSourceCard({item, source, automatic, ordinal, output, buildings, factory_name,

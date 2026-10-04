@@ -33,7 +33,8 @@ function readStore(key) {
 }
 
 function source(id, overrides = {}) {
-    return {id, target_item: '铁块', output_per_minute: 30, recipe_choice: 1, building: 0,
+    // These storage fixtures intentionally model independent plants with no targets.
+    return {id, target_item: '铁块', standalone: true, output_per_minute: 30, recipe_choice: 1, building: 0,
         proliferator_mode: 0, proliferator_points: 0, ...overrides};
 }
 
@@ -54,6 +55,18 @@ async function addSource(user, item = '铁块') {
     await user.type(within(dialog).getByRole('searchbox'), item);
     await user.click(within(dialog).getByRole('button', {name: `选择${item}`, exact: true}));
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '选择物品'})).not.toBeInTheDocument());
+}
+
+async function addTarget(user, item) {
+    await user.click(screen.getByRole('button', {name: '添加需求物品'}));
+    const dialog = screen.getByRole('dialog', {name: '选择物品'});
+    await user.type(within(dialog).getByRole('searchbox'), item);
+    await user.click(within(dialog).getByRole('button', {name: `选择${item}`, exact: true}));
+    await waitFor(() => expect(screen.queryByRole('dialog', {name: '选择物品'})).not.toBeInTheDocument());
+}
+
+function productRows() {
+    return screen.getByRole('region', {name: '生产结果表，可横向滚动'}).querySelectorAll('tbody > tr[data-product]');
 }
 
 async function saveStrategy(user, name) {
@@ -85,11 +98,30 @@ describe('production source settings and storage', () => {
         sources.forEach((entry, index) => {
             expect(entry.id).toEqual(expect.any(String));
             expect(entry.id).not.toBe('');
-            expect(entry).toMatchObject({target_item: '铁块', output_per_minute: 0});
+            expect(entry).toMatchObject({target_item: '铁块', output_per_minute: 0, standalone: true});
             expect(sourceInput('铁块', index + 1)).toHaveValue('0.00');
         });
         expect(screen.queryByRole('spinbutton', {name: '铁块目标产量'})).not.toBeInTheDocument();
         expect(readStore('auto_settings').natural_production_line).toEqual([]);
+    });
+
+    it('keeps a deliberately added unrelated source independent when targets are removed and the app reopens', async () => {
+        let {user, unmount} = renderApp();
+        await addTarget(user, '铁块');
+        await addSource(user, '重氢');
+        await editOutput(user, 150, '重氢');
+        const saved = readStore('auto_settings').production_sources;
+        expect(saved[0]).toMatchObject({target_item: '重氢', output_per_minute: 150, standalone: true});
+        await user.click(screen.getByRole('button', {name: '移除铁块需求'}));
+        expect(sourceInput('重氢')).toHaveValue('150.00');
+        expect(screen.queryByText('已暂停1条未被当前需求使用的来源')).not.toBeInTheDocument();
+        unmount();
+        ({user} = renderApp());
+        expect(sourceInput('重氢')).toHaveValue('150.00');
+        expect(screen.getByRole('article', {name: '重氢手动产线 1'})).toHaveAttribute('data-source-id', saved[0].id);
+        expect(readStore('auto_settings').production_sources).toEqual(saved);
+        await editOutput(user, 0, '重氢');
+        expect(readStore('auto_settings').production_sources[0]).toEqual({...saved[0], output_per_minute: 0});
     });
 
     it('autosaves independent same-item source edits and preserves zero allocations and identities across settings changes and remounts', async () => {
@@ -230,8 +262,8 @@ describe('production source settings and storage', () => {
     });
 
     it('migrates legacy building counts once, retaining the backup and existing stable source ids through remounts', () => {
-        const legacy = [{目标物品: '铁块', 建筑数量: 10, 配方id: 1, 增产点数: 0, 增产模式: 0, 建筑: 0},
-            {目标物品: '铁块', 建筑数量: 0, 配方id: 1, 增产点数: 0, 增产模式: 0, 建筑: 0}];
+        const legacy = [{目标物品: '铁块', 建筑数量: 10, 配方id: 1, 增产点数: 0, 增产模式: 0, 建筑: 0, standalone: true},
+            {目标物品: '铁块', 建筑数量: 0, 配方id: 1, 增产点数: 0, 增产模式: 0, 建筑: 0, standalone: true}];
         const existing = source('existing-canonical', {output_per_minute: 15});
         // Old sparse arrays must not cause a phantom source. Displaying seconds
         // must not divide the canonical migrated allocation by 60.
@@ -243,7 +275,7 @@ describe('production source settings and storage', () => {
         expect(first.natural_production_line_backup).toEqual(legacy);
         expect(first.production_sources).toHaveLength(3);
         expect(first.production_sources[0]).toEqual(existing);
-        expect(first.production_sources[1]).toMatchObject({target_item: '铁块', output_per_minute: 600, recipe_choice: 1, building: 0});
+        expect(first.production_sources[1]).toMatchObject({target_item: '铁块', output_per_minute: 600, recipe_choice: 1, building: 0, standalone: true});
         expect(first.production_sources[2]).toMatchObject({target_item: '铁块', output_per_minute: 0});
         expect(new Set(first.production_sources.map(entry => entry.id)).size).toBe(3);
         expect(sourceInput('铁块', 2)).toHaveValue('10.00');
@@ -254,6 +286,85 @@ describe('production source settings and storage', () => {
             expect(readStore('auto_settings').natural_production_line_backup).toEqual(legacy);
             expect(readStore('auto_settings').natural_production_line).toEqual([]);
         }
+    });
+
+    it('keeps untagged legacy building-count sources paused after migration and preserves their backup', async () => {
+        const legacy = [{目标物品: '铁块', 建筑数量: 10, 配方id: 1, 增产点数: 0, 增产模式: 0, 建筑: 0}];
+        localStorage.setItem('auto_settings', JSON.stringify({natural_production_line: legacy}));
+        let {user, unmount} = renderApp();
+        const saved = readStore('auto_settings');
+        expect(saved.natural_production_line_backup).toEqual(legacy);
+        expect(saved.natural_production_line).toEqual([]);
+        expect(saved.production_sources).toHaveLength(1);
+        expect(saved.production_sources[0]).toMatchObject({target_item: '铁块', standalone: false, output_per_minute: 600});
+        expect(productRows()).toHaveLength(0);
+        expect(screen.queryByRole('textbox', {name: '铁块手动产线 1分配产量'})).not.toBeInTheDocument();
+        await user.click(screen.getByText('已暂停1条未被当前需求使用的来源'));
+        expect(screen.getByRole('listitem', {name: '已暂停来源 1 铁块'})).toHaveTextContent('600.00 / min');
+        unmount();
+        ({user} = renderApp());
+        expect(productRows()).toHaveLength(0);
+        expect(readStore('auto_settings').production_sources).toEqual(saved.production_sources);
+        expect(readStore('auto_settings').natural_production_line_backup).toEqual(legacy);
+        await addTarget(user, '铁块');
+        expect(sourceInput()).toHaveValue('600.00');
+        expect(screen.getByRole('article', {name: '铁块手动产线 1'})).toHaveAttribute('data-source-id', saved.production_sources[0].id);
+        expect(readStore('auto_settings').production_sources).toEqual(saved.production_sources);
+    });
+
+    it.each(['explicitly bound', 'untagged older'])('pauses an %s saved gravity-matrix allocation on empty reload and restores its 150/150 split with demand', async mode => {
+        let {user, unmount} = renderApp();
+        await addTarget(user, '引力矩阵');
+        await addSource(user, '重氢');
+        await editOutput(user, 150, '重氢');
+        const allocated = readStore('auto_settings').production_sources;
+        expect(allocated).toHaveLength(1);
+        expect(allocated[0]).toMatchObject({target_item: '重氢', standalone: false, output_per_minute: 150});
+        expect(screen.getByLabelText('重氢总需求')).toHaveTextContent(/^300.00$/);
+        expect(screen.getByLabelText('重氢自动产线产量')).toHaveTextContent(/^150.00$/);
+        await saveStrategy(user, '重氢分配');
+        expect(readStore('scheme_data').Vanilla['重氢分配'].production_sources).toEqual(allocated);
+        await user.click(screen.getByTitle('保存需求列表'));
+        const saveDialog = screen.getByRole('dialog', {name: '保存需求列表'});
+        await user.type(within(saveDialog).getByRole('textbox', {name: '需求列表名称'}), '引力矩阵目标');
+        await user.click(within(saveDialog).getByRole('button', {name: '保存', exact: true}));
+        expect(readStore('needs_list').Vanilla['引力矩阵目标']).toEqual({'引力矩阵': 60});
+        unmount();
+        if (mode === 'untagged older') {
+            const settings = readStore('auto_settings');
+            delete settings.production_sources[0].standalone;
+            localStorage.setItem('auto_settings', JSON.stringify(settings));
+        }
+        const saved = readStore('auto_settings').production_sources;
+        ({user} = renderApp());
+        expect(screen.queryByRole('spinbutton', {name: '引力矩阵目标产量'})).not.toBeInTheDocument();
+        expect(productRows()).toHaveLength(0);
+        expect(screen.queryByRole('region', {name: '重氢生产来源'})).not.toBeInTheDocument();
+        expect(screen.queryByRole('textbox', {name: '氢产能，等比例调整需求'})).not.toBeInTheDocument();
+        expect(screen.getByText('开始规划你的生产线')).toBeInTheDocument();
+        expect(readStore('auto_settings').production_sources).toEqual(saved);
+        expect(saved[0]).toMatchObject({id: allocated[0].id, output_per_minute: 150});
+        await user.click(screen.getByText('已暂停1条未被当前需求使用的来源'));
+        expect(screen.getByRole('listitem', {name: '已暂停来源 1 重氢'})).toHaveTextContent('150.00 / min');
+        if (mode === 'explicitly bound') {
+            await loadStrategy(user, '重氢分配');
+            expect(productRows()).toHaveLength(0);
+            expect(readStore('auto_settings').production_sources).toEqual(saved);
+        }
+        await addTarget(user, '铁块');
+        expect([...productRows()].map(row => row.dataset.product)).not.toContain('重氢');
+        expect([...productRows()].map(row => row.dataset.product)).not.toContain('氢');
+        expect(readStore('auto_settings').production_sources).toEqual(saved);
+        await user.click(screen.getByTitle('加载需求列表'));
+        await user.click(screen.getByRole('menuitem', {name: '引力矩阵目标'}));
+        expect(screen.getByRole('spinbutton', {name: '引力矩阵目标产量'})).toHaveValue(60);
+        expect(screen.queryByRole('spinbutton', {name: '铁块目标产量'})).not.toBeInTheDocument();
+        expect(sourceInput('重氢')).toHaveValue('150.00');
+        expect(screen.getByLabelText('重氢总需求')).toHaveTextContent(/^300.00$/);
+        expect(screen.getByLabelText('重氢自动产线产量')).toHaveTextContent(/^150.00$/);
+        expect(screen.getByRole('article', {name: '重氢手动产线 1'})).toHaveAttribute('data-source-id', allocated[0].id);
+        expect(screen.queryByText('已暂停1条未被当前需求使用的来源')).not.toBeInTheDocument();
+        expect(readStore('auto_settings').production_sources).toEqual(saved);
     });
 
     it('keeps canonical source rates and building counts unchanged when switching display units, and converts edits back to per minute', async () => {

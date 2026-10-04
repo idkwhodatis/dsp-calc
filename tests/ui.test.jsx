@@ -194,6 +194,7 @@ describe('calculator UI interactions', () => {
         const output = screen.getByRole('textbox', {name: '铁块手动产线 1分配产量'});
         expect(output).toHaveValue('0.00');
         expect(readStore('auto_settings').production_sources[0].output_per_minute).toBe(0);
+        expect(readStore('auto_settings').production_sources[0].standalone).toBe(true);
         await user.clear(output);
         await user.type(output, '180');
         await user.keyboard('{Enter}');
