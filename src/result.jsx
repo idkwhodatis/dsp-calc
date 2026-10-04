@@ -488,7 +488,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         </CardContent>
     </Card>;
     const buildingCard = <Card className="dsp-summary-card gap-0 rounded-lg py-0 shadow-none">
-        <CardHeader className="flex-row items-center justify-between px-2.5 pt-2 pb-1"><CardTitle className="text-xs">建筑统计</CardTitle><Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">{totalBuildings}</Badge></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between px-2.5 pt-2 pb-1"><CardTitle className="text-xs">建筑统计</CardTitle><Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">{totalBuildings}</Badge></CardHeader>
         <CardContent className="px-2.5 pb-2">
             {building_rows.length > 0 ? <table className="w-full"><tbody>{building_rows}</tbody></table> : <p className="py-2 text-xs text-muted-foreground">暂无建筑需求</p>}
         </CardContent>
@@ -501,7 +501,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         </CardContent>
     </Card>;
     const mineralizedCard = <Card className="dsp-summary-card gap-0 rounded-lg py-0 shadow-none">
-        <CardHeader className="flex-row items-center justify-between px-2.5 pt-2 pb-1.5"><CardTitle className="text-xs">原矿化列表</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between px-2.5 pt-2 pb-1.5"><CardTitle className="text-xs">原矿化列表</CardTitle>
             {mineralize_doms.length > 0 && <Button type="button" variant="ghost" size="sm" className="h-6 px-1 text-xs text-muted-foreground" onClick={clear_mineralize_list}>清空</Button>}
         </CardHeader>
         <CardContent className="px-2.5 pb-2.5">{mineralize_doms.length > 0 ? <div className="flex flex-wrap gap-1.5">{mineralize_doms}</div> : <p className="text-xs text-muted-foreground">将物品视为原矿，直接从生产链外部供给</p>}</CardContent>

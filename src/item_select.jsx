@@ -91,7 +91,7 @@ export function ItemSelect({item, set_item, text = '选择物品', icon, disable
             </Button>
         </DialogTrigger>
         <DialogContent className="flex max-h-[90dvh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-hidden p-3 sm:max-w-[calc(100vw-2rem)] sm:p-4"
-                       style={{'--picker-tile-size': `${tileSize}px`, width: `${Math.max(360, layout.columns * (tileSize + 3) - 3 + 34)}px`}}>
+                       style={{'--picker-tile-size': `${tileSize}px`, width: `${Math.max(360, layout.columns * (tileSize + 3) - 3 + 56)}px`}}>
             <DialogHeader className="shrink-0 gap-1 pr-6 text-left">
                 <DialogTitle className="text-base">选择物品</DialogTitle>
                 <DialogDescription className="text-xs">按游戏布局快速选择，支持名称、拼音与首字母搜索。</DialogDescription>
