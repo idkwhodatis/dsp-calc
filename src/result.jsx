@@ -185,7 +185,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     const is_compact = compact_mode !== "full";
     const is_mobile = compact_mode === "mobile";
 
-    const mob_btn_icon = is_mobile ? 18 : 26; // 表格内按钮图标
+    const mob_btn_icon = is_mobile ? 18 : 32; // 表格内按钮图标
     let game_data = global_state.game_data;
     let scheme_data = global_state.scheme_data;
     let settings = global_state.settings;
@@ -298,7 +298,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
 
     let mineralize_doms = Object.keys(mineralize_list).map(item => (
         <Button key={item} type="button" variant="outline" size="sm" className="h-auto gap-1 px-1.5 py-1" aria-label={`恢复${item}生产`} onClick={() => unmineralize(item)}>
-            <ItemIcon item={item} size={24}/><span className="text-sm">{item}</span><span aria-hidden="true" className="text-muted-foreground">×</span>
+            <ItemIcon item={item} size={is_mobile ? 24 : 40}/><span className="text-sm">{item}</span><span aria-hidden="true" className="text-muted-foreground">×</span>
         </Button>
     ));
 
@@ -313,7 +313,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         }
         let factory_number = get_factory_number(result_dict[i], i);
         let from_side_products = Object.entries(side_products[i]).map(([from, amount]) =>
-            <div key={from} className="mt-1 flex items-center justify-end gap-0.5 whitespace-nowrap text-sm text-muted-foreground">+{amount.toFixed(fixed_num)} (<ItemIcon item={from} size={18}/>)
+            <div key={from} className="mt-1 flex items-center justify-end gap-0.5 whitespace-nowrap text-sm text-muted-foreground">+{amount.toFixed(fixed_num)} (<ItemIcon item={from} size={is_mobile ? 18 : 26}/>)
             </div>
         );
         let factory_name = game_data.factory_data[game_data.recipe_data[recipe_id]["设施"]][scheme_data.scheme_for_recipe[recipe_id]["建筑"]]["名称"];
@@ -354,33 +354,33 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
 
         const ratioProps = {fixed_num, needs_list, set_needs_list};
         result_table_rows.push(<tr className={cn("border-b last:border-0 transition-colors hover:bg-muted/40", row_class)} key={i}>
-            <td className="px-1.5 py-3">
+            <td className="px-2 py-3">
                 <Button type="button" variant="ghost" size="sm" className="h-7 whitespace-nowrap px-1 text-sm text-muted-foreground"
                     aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
                     onClick={() => is_mineralized ? unmineralize(i) : mineralize(i)}>
                     {is_mineralized ? '恢复' : '原矿化'}
                 </Button>
             </td>
-            <td className="px-1.5 py-3">
+            <td className="px-2 py-3">
                 <div className="flex items-center gap-1.5 whitespace-nowrap">
-                    <ItemIcon item={i} tooltip={is_compact} size={is_mobile ? 24 : 32}/>
+                    <ItemIcon item={i} tooltip={is_compact} size={is_mobile ? 24 : 40}/>
                     <span className={cn("dsp-item-name text-sm font-medium", is_compact && "sr-only")}>{i}</span>
                 </div>
             </td>
-            <td className="px-1.5 py-3 text-right">
+            <td className="px-2 py-3 text-right">
                 <RatioAdjustInput value={get_gross_output(result_dict[i], i)} {...ratioProps} label={`${i}产能，等比例调整需求`}/>
                 {from_side_products}
             </td>
-            <td className="px-1.5 py-3 whitespace-nowrap">
+            <td className="px-2 py-3 whitespace-nowrap">
                 {!is_mineralized ? <div className="inline-flex items-center gap-1">
                     <ItemIcon item={factory_name} size={is_mobile ? 20 : 30}/>
                     <RatioAdjustInput value={factory_number} {...ratioProps} label={`${i}工厂数量，等比例调整需求`}/>
                 </div> : <span className="text-muted-foreground">—</span>}
             </td>
-            <td className="px-1.5 py-3"><RecipeSelect item={i} onChange={change_recipe} choice={scheme_data.item_recipe_choices[i]} compact={compact_mode}/></td>
-            <td className="px-1.5 py-3"><ProModeSelect recipe_id={recipe_id} onChange={change_pro_mode} choice={scheme_data.scheme_for_recipe[recipe_id]["增产模式"]}/></td>
-            <td className="px-1.5 py-3"><ProNumSelect onChange={change_pro_num} choice={scheme_data.scheme_for_recipe[recipe_id]["增产点数"]} icon_size={mob_btn_icon}/></td>
-            <td className="px-1.5 py-3"><FactorySelect recipe_id={recipe_id} onChange={change_factory} choice={scheme_data.scheme_for_recipe[recipe_id]["建筑"]} icon_size={mob_btn_icon}/></td>
+            <td className="px-2 py-3"><RecipeSelect item={i} onChange={change_recipe} choice={scheme_data.item_recipe_choices[i]} compact={compact_mode}/></td>
+            <td className="px-2 py-3"><ProModeSelect recipe_id={recipe_id} onChange={change_pro_mode} choice={scheme_data.scheme_for_recipe[recipe_id]["增产模式"]}/></td>
+            <td className="px-2 py-3"><ProNumSelect onChange={change_pro_num} choice={scheme_data.scheme_for_recipe[recipe_id]["增产点数"]} icon_size={mob_btn_icon}/></td>
+            <td className="px-2 py-3"><FactorySelect recipe_id={recipe_id} onChange={change_factory} choice={scheme_data.scheme_for_recipe[recipe_id]["建筑"]} icon_size={mob_btn_icon}/></td>
         </tr>);
     }
 
@@ -409,7 +409,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
 
     const building_rows = Object.entries(building_list).map(([building, count]) => (
         <tr key={building} className="border-b last:border-0">
-            <td className="py-2"><span className="flex items-center gap-1.5 text-sm"><ItemIcon item={building} tooltip={false} size={26}/>{building}</span></td>
+            <td className="py-2"><span className="flex items-center gap-1.5 text-sm"><ItemIcon item={building} tooltip={false} size={is_mobile ? 26 : 40}/>{building}</span></td>
             <td className="py-2 pl-2 text-right text-base whitespace-nowrap tabular-nums">
                 <ValueWithDifference currentValue={count} previousValue={historyValues?.[1]?.buildingCounts?.[building]}/>
             </td>
@@ -425,7 +425,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
 
     const surplus_doms = Object.entries(lp_surplus_list).map(([item, quant]) =>
         <div key={item} className="flex items-center gap-1.5 rounded-lg border bg-muted/30 px-1.5 py-2">
-            <ItemIcon item={item} size={28}/>
+            <ItemIcon item={item} size={is_mobile ? 28 : 40}/>
             <div className="min-w-0 flex-1"><p className="text-sm font-medium">{item}</p><p className="text-sm tabular-nums text-muted-foreground">{quant.toFixed(fixed_num)} / {time_tick === 60 ? 'min' : 's'}</p></div>
             <Button type="button" variant="outline" size="sm" className="h-8 px-1.5 text-sm" aria-label={`避免${item}溢出`} onClick={() => IncreaseCostWhenSurplus(item)}>避免溢出</Button>
         </div>);
@@ -479,7 +479,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         <CardContent className="px-3 pb-3">
             {rawMaterials.length > 0 ? <table className="w-auto"><tbody>
                 {rawMaterials.map(([item, amount]) => <tr key={item} className="border-b last:border-0">
-                    <td className="py-2"><span className="flex items-center gap-1.5 text-sm"><ItemIcon item={item} tooltip={false} size={26}/>{item}</span></td>
+                    <td className="py-2"><span className="flex items-center gap-1.5 text-sm"><ItemIcon item={item} tooltip={false} size={is_mobile ? 26 : 40}/>{item}</span></td>
                     <td className="py-2 pl-2 text-right text-base whitespace-nowrap tabular-nums">
                         <ValueWithDifference currentValue={amount} previousValue={historyValues?.[1]?.rawMaterials?.[item]}/><span className="ml-0.5 text-muted-foreground">/{unit}</span>
                     </td>
@@ -524,7 +524,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                 <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-sm" onClick={() => set_show_building_popup(true)}>建筑与需求</Button>
             </div>
         </div>
-        <div className="dsp-result-layout flex max-w-full items-start gap-2.5">
+        <div className="dsp-result-layout flex max-w-full items-start gap-4">
             <Card className="dsp-result-table-card w-fit min-w-0 max-w-full flex-[0_1_auto] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
                 <p className="border-b bg-muted/20 px-2 py-2 text-sm text-muted-foreground lg:hidden">左右滑动表格，查看配方与生产设置</p>
                 <div className="dsp-result-table-scroll max-h-[70dvh] max-w-full overflow-auto" tabIndex={0} role="region" aria-label="生产结果表，可横向滚动">
@@ -532,10 +532,10 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                         <caption className="sr-only">生产链计算结果：产能、工厂、配方和增产设置</caption>
                         <thead className="sticky top-0 z-10 border-b bg-muted shadow-[0_1px_0_var(--border)]">
                             <tr className="text-left text-base whitespace-nowrap text-muted-foreground">
-                                <th scope="col" className="px-1.5 py-3 font-medium">操作</th><th scope="col" className="px-1.5 py-3 font-medium">物品</th>
-                                <th scope="col" className="px-1.5 py-3 text-right font-medium">产能 / {unit}</th><th scope="col" className="px-1.5 py-3 font-medium">工厂数量</th>
-                                <th scope="col" className="px-1.5 py-3 font-medium">配方选取</th><th scope="col" className="px-1.5 py-3 font-medium">增产模式</th>
-                                <th scope="col" className="px-1.5 py-3 font-medium">增产剂</th><th scope="col" className="px-1.5 py-3 font-medium">工厂类型</th>
+                                <th scope="col" className="px-2 py-3 font-medium">操作</th><th scope="col" className="px-2 py-3 font-medium">物品</th>
+                                <th scope="col" className="px-2 py-3 text-right font-medium">产能 / {unit}</th><th scope="col" className="px-2 py-3 font-medium">工厂数量</th>
+                                <th scope="col" className="px-2 py-3 font-medium">配方选取</th><th scope="col" className="px-2 py-3 font-medium">增产模式</th>
+                                <th scope="col" className="px-2 py-3 font-medium">增产剂</th><th scope="col" className="px-2 py-3 font-medium">工厂类型</th>
                             </tr>
                         </thead>
                         <tbody><NplRows/>{result_table_rows}

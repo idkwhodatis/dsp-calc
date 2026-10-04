@@ -70,7 +70,7 @@ export function Recipe({recipe, compact}) {
             ? Math.round(count * 100) / 100
             : count.toFixed(findNonZeroPosition(count) + 2);
         return <span key={item} className="dsp-recipe-ingredient inline-flex shrink-0 items-center gap-0.5">
-            <ItemIcon item={item} size={26}/>
+            <ItemIcon item={item} size={28}/>
             <span className="mr-1 self-end text-sm tabular-nums text-muted-foreground">{count_used}</span>
         </span>;
     }
@@ -92,11 +92,11 @@ export function Recipe({recipe, compact}) {
     if (compact === "narrow" || compact === "compact") {
         if (input_entries.length === 0) return <span className="text-sm text-muted-foreground" title={description} role="img" aria-label={description}>{time}s</span>;
         return <span className={cn("dsp-compact-recipe block w-max min-w-0", compact === "narrow" ? "max-w-28" : "max-w-32")} title={description} role="img" aria-label={description}>
-            <CompactRecipeIcons input_entries={input_entries} time={time} icon_size={compact === "narrow" ? 22 : 24} gap={2}/>
+            <CompactRecipeIcons input_entries={input_entries} time={time} icon_size={compact === "narrow" ? 22 : 24} gap={4}/>
         </span>;
     }
 
-    return <span className="dsp-full-recipe inline-flex max-w-72 flex-wrap items-center gap-x-0.5 gap-y-1" title={description} role="img" aria-label={description}>
+    return <span className="dsp-full-recipe inline-flex max-w-72 flex-wrap items-center gap-x-1 gap-y-1" title={description} role="img" aria-label={description}>
         {input_doms.length > 0 && <>
             {input_doms}
             <span className="mx-0.5 inline-flex min-w-6 flex-col items-center text-muted-foreground">
@@ -110,8 +110,8 @@ export function Recipe({recipe, compact}) {
 }
 
 export function HorizontalMultiButtonSelect({choice, options, onChange, no_gap, className, icon_size}) {
-    const resolved_icon_size = icon_size || 26;
-    return <div className={cn("dsp-segmented-control inline-flex w-fit items-center rounded-md border bg-muted/40 p-0.5", no_gap ? "gap-0" : "gap-0.5", className)} role="group">
+    const resolved_icon_size = icon_size || 32;
+    return <div className={cn("dsp-segmented-control inline-flex w-fit items-center rounded-md border bg-muted/40 p-0.5", no_gap ? "gap-0" : "gap-1", className)} role="group">
         {options.map(({value, label, item_icon, className: optionClassName}) => {
             const selected = choice == value;
             return <Button key={value} type="button" variant="ghost" size="sm"

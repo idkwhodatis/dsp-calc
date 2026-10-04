@@ -37,7 +37,7 @@ describe('compact production overview', () => {
         expect(result).toHaveAttribute('data-density', 'comfortable');
         // These are the responsive layout contract; pixel layout is checked in-browser.
         expect(result).toHaveClass('w-fit', 'max-w-full');
-        expect(container.querySelector('.dsp-result-layout')).toHaveClass('flex', 'max-w-full');
+        expect(container.querySelector('.dsp-result-layout')).toHaveClass('flex', 'max-w-full', 'gap-4');
         expect(container.querySelector('.dsp-result-layout').className).not.toContain('1fr');
         expect(container.querySelector('.dsp-result-table-card')).toHaveClass('w-fit', 'min-w-0', 'max-w-full', 'flex-[0_1_auto]');
         expect(container.querySelector('.dsp-production-table')).toHaveClass('w-auto');
@@ -61,7 +61,7 @@ describe('compact production overview', () => {
         expect(row.querySelector('.dsp-item-name')).toHaveClass('sr-only');
         expect(row.querySelector('.dsp-item-name')).toHaveTextContent('铁块');
         expect(within(row).getAllByRole('cell')).toHaveLength(8);
-        for (const cell of within(row).getAllByRole('cell')) expect(cell).toHaveClass('px-1.5', 'py-3');
+        for (const cell of within(row).getAllByRole('cell')) expect(cell).toHaveClass('px-2', 'py-3');
         expect(within(row).getByRole('button', {name: '位面熔炉'})).toHaveClass('min-h-8', 'min-w-7', 'py-1');
     });
 
@@ -119,6 +119,58 @@ describe('compact production overview', () => {
             expect(recipe).toHaveClass('w-max', 'max-w-32');
             expect(recipe).toHaveAccessibleName(recipe.getAttribute('title'));
         }
+    });
+
+    it.each(['full', 'compact', 'narrow'])('restores original desktop item, summary and selector icon sizes in %s mode', mode => {
+        render(<Overview mode={mode}/>);
+        const row = screen.getByRole('textbox', {name: '铁块产能，等比例调整需求'}).closest('tr');
+        expect(row.children[1].querySelector('[role="img"]')).toHaveStyle({width: '40px', height: '40px'});
+        expect(row.children[3].querySelector('[role="img"]')).toHaveStyle({width: '30px', height: '30px'});
+        const furnace = within(row).getByRole('button', {name: '位面熔炉'});
+        expect(furnace.querySelector('[role="img"]')).toHaveStyle({width: '32px', height: '32px'});
+        const proliferator = within(row).getByRole('button', {name: /增产剂\s+Mk\.II$/});
+        expect(proliferator.querySelector('[role="img"]')).toHaveStyle({width: '32px', height: '32px'});
+        const summary = screen.getByRole('complementary', {name: '生产统计'});
+        for (const icon of summary.querySelectorAll('[role="img"]')) {
+            expect(icon).toHaveStyle({width: '40px', height: '40px'});
+        }
+        expect(furnace.parentElement).toHaveClass('gap-1');
+        for (const cell of within(row).getAllByRole('cell')) expect(cell).toHaveClass('px-2', 'py-3');
+    });
+
+    it('restores 28px full-recipe icons without changing compact, narrow or mobile recipe sizes', () => {
+        const recipe = default_game_data.recipe_data.find(entry => Object.hasOwn(entry['原料'], '铁矿') && Object.hasOwn(entry['产物'], '铁块'));
+        const {container, rerender} = render(<TooltipProvider><ContextProvider><Recipe recipe={recipe} compact="full"/></ContextProvider></TooltipProvider>);
+        const full = container.querySelector('.dsp-full-recipe');
+        expect(full).toHaveClass('gap-x-1');
+        for (const icon of full.querySelectorAll('.dsp-recipe-ingredient [role="img"]')) {
+            expect(icon).toHaveStyle({width: '28px', height: '28px'});
+        }
+        for (const [mode, size] of [['compact', 24], ['narrow', 22], ['mobile', 20]]) {
+            rerender(<TooltipProvider><ContextProvider><Recipe recipe={recipe} compact={mode}/></ContextProvider></TooltipProvider>);
+            const icon = container.querySelector('[role="img"] [role="img"]');
+            expect(icon).toHaveStyle({width: `${size}px`, height: `${size}px`});
+            expect(container.querySelector('[title]')).toHaveAccessibleName(describeRecipe(recipe));
+        }
+    });
+
+    it('preserves the approved mobile main, factory and selector icon sizes', () => {
+        render(<Overview mode="mobile"/>);
+        const row = screen.getByRole('textbox', {name: '铁块产能，等比例调整需求'}).closest('tr');
+        expect(row.children[1].querySelector('[role="img"]')).toHaveStyle({width: '24px', height: '24px'});
+        expect(row.children[3].querySelector('[role="img"]')).toHaveStyle({width: '20px', height: '20px'});
+        expect(within(row).getByRole('button', {name: '位面熔炉'}).querySelector('[role="img"]')).toHaveStyle({width: '18px', height: '18px'});
+        for (const icon of screen.getByRole('complementary', {name: '生产统计'}).querySelectorAll('[role="img"]')) {
+            expect(icon).toHaveStyle({width: '26px', height: '26px'});
+        }
+    });
+
+    it('restores the natural-production factory icon to 30px while retaining 32px desktop selectors', () => {
+        localStorage.setItem('auto_settings', JSON.stringify({natural_production_line: [{'目标物品': '铁块', '建筑数量': 10, '配方id': 1, '增产点数': 0, '增产模式': 0, '建筑': 0}]}));
+        render(<Overview mode="full" initialNeeds={{}}/>);
+        const row = screen.getByRole('textbox', {name: '铁块自然产线建筑数量'}).closest('tr');
+        expect(row.children[3].querySelector('[role="img"]')).toHaveStyle({width: '30px', height: '30px'});
+        expect(within(row).getByRole('button', {name: '位面熔炉'}).querySelector('[role="img"]')).toHaveStyle({width: '32px', height: '32px'});
     });
 
     it('keeps mobile quantities editable and all summaries reachable in dismissible dialogs', async () => {
