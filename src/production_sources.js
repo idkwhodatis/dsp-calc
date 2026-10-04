@@ -260,7 +260,7 @@ function solveBalances(state, needs, autoNodes, manualResults) {
     } catch {
         return {result: {}, errors: ['物料平衡求解失败，请检查产量、配方和成本设置']};
     }
-    if (!solved.feasible) errors.push('独立来源与当前自动配方无法满足物料平衡，请检查循环配方');
+    if (!solved.feasible) errors.push('独立来源与当前需求配方无法满足物料平衡，请检查循环配方');
     if (solved.bounded === false) errors.push('当前成本设置使求解无界，请检查成本权重');
     const result = {};
     if (solved.feasible && solved.bounded !== false) {

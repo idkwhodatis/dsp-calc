@@ -191,7 +191,7 @@ describe('calculator UI interactions', () => {
         const {user} = renderApp();
         await addTarget(user, '铁块', '铁块', false, '添加现有产线');
         expect(screen.getByRole('region', {name: '铁块生产来源'})).toBeInTheDocument();
-        const output = screen.getByRole('textbox', {name: '铁块手动产线 1分配产量'});
+        const output = screen.getByRole('textbox', {name: '铁块现有产线 1分配产量'});
         expect(output).toHaveValue('0.00');
         expect(readStore('auto_settings').production_sources[0].output_per_minute).toBe(0);
         expect(readStore('auto_settings').production_sources[0].standalone).toBe(true);
@@ -199,8 +199,8 @@ describe('calculator UI interactions', () => {
         await user.type(output, '180');
         await user.keyboard('{Enter}');
         expect(readStore('auto_settings').production_sources[0].output_per_minute).toBe(180);
-        expect(screen.getByLabelText('铁块手动产线 1工厂数量')).toHaveTextContent('3.00');
-        await user.click(screen.getByRole('button', {name: '删除铁块手动产线 1'}));
+        expect(screen.getByLabelText('铁块现有产线 1工厂数量')).toHaveTextContent('3.00');
+        await user.click(screen.getByRole('button', {name: '删除铁块现有产线 1'}));
         expect(readStore('auto_settings').production_sources).toEqual([]);
         expect(screen.getByText('开始规划你的生产线')).toBeInTheDocument();
     });
@@ -218,7 +218,7 @@ describe('calculator UI interactions', () => {
         dialog = screen.getByRole('dialog', {name: '保存需求列表'});
         await user.type(within(dialog).getByRole('textbox', {name: '需求列表名称'}), '测试产线');
         await user.click(within(dialog).getByRole('button', {name: '保存', exact: true}));
-        expect(readStore('needs_list').Vanilla['测试产线']).toEqual({'铁块': 60});
+        expect(readStore('needs_list').Vanilla['测试产线']).toMatchObject({plan_version: 1, game_name: 'Vanilla', needs_list: {'铁块': 60}, settings: {production_sources: []}});
         await clearTargets(user);
         await user.click(screen.getByTitle('加载需求列表'));
         await user.click(screen.getByRole('menuitem', {name: '测试产线'}));
@@ -226,7 +226,7 @@ describe('calculator UI interactions', () => {
         await user.click(screen.getByRole('button', {name: '删除已保存的需求列表'}));
         await user.click(screen.getByRole('menuitem', {name: '测试产线'}));
         await user.click(within(screen.getByRole('dialog', {name: '删除需求列表'})).getByRole('button', {name: '取消'}));
-        expect(readStore('needs_list').Vanilla['测试产线']).toEqual({'铁块': 60});
+        expect(readStore('needs_list').Vanilla['测试产线']).toMatchObject({plan_version: 1, game_name: 'Vanilla', needs_list: {'铁块': 60}, settings: {production_sources: []}});
         await user.click(screen.getByRole('button', {name: '删除已保存的需求列表'}));
         await user.click(screen.getByRole('menuitem', {name: '测试产线'}));
         await user.click(within(screen.getByRole('dialog', {name: '删除需求列表'})).getByRole('button', {name: '确认删除'}));
@@ -338,7 +338,7 @@ describe('calculator UI interactions', () => {
         dialog = screen.getByRole('dialog', {name: '保存需求列表'});
         await user.type(within(dialog).getByRole('textbox', {name: '需求列表名称'}), '保留产线');
         await user.click(within(dialog).getByRole('button', {name: '覆盖保存'}));
-        expect(readStore('needs_list').Vanilla['保留产线']).toEqual({'铁块': 60});
+        expect(readStore('needs_list').Vanilla['保留产线']).toMatchObject({plan_version: 1, game_name: 'Vanilla', needs_list: {'铁块': 60}});
         expect(readStore('needs_list').MoreMegaStructure['其它游戏']).toEqual({'铁块': 10});
     });
 

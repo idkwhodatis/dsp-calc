@@ -1,7 +1,7 @@
 import {useContext, useState} from 'react';
 import {Box, ChevronDown, CircleHelp, Cpu, Layers3, RotateCcw, Settings2, SlidersHorizontal} from 'lucide-react';
 import {BatchSetting} from './batch_setting.jsx';
-import {ContextProvider, GameInfoContext, GameInfoSetterContext, SettingsContext, SettingsSetterContext, StorageWarningContext} from './contexts.jsx';
+import {ContextProvider, GameInfoContext, GameInfoSetterContext, NeedsListContext, NeedsListSetterContext, SettingsContext, SettingsSetterContext, StorageWarningContext} from './contexts.jsx';
 import {NeedsList, NeedsListStorage} from './needs_list.jsx';
 import {Result} from './result.jsx';
 import {SchemeStorage} from './scheme_data.jsx';
@@ -14,7 +14,7 @@ import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, Di
 import {Checkbox} from './components/ui/checkbox';
 import {Tabs, TabsList, TabsTrigger} from './components/ui/tabs';
 
-function GameVersion({onChange}) {
+function GameVersion() {
     const game_info = useContext(GameInfoContext);
     const set_game_data = useContext(GameInfoSetterContext);
     const set_settings = useContext(SettingsSetterContext);
@@ -37,7 +37,6 @@ function GameVersion({onChange}) {
         try { localStorage.setItem('auto_mods', JSON.stringify(draft)); } catch { /* The selected dataset remains usable without persistence. */ }
         // Change the game and its saved strategy as one state transition.
         set_game_data(data);
-        onChange();
         // Existing recipe ids and mineralizations belong to the previous dataset.
         set_settings({
             natural_production_line: [], production_sources: [], mineralize_list: {},
@@ -60,7 +59,8 @@ function GameVersion({onChange}) {
 }
 
 function AppWithContexts() {
-    const [needs_list, set_needs_list] = useState({});
+    const needs_list = useContext(NeedsListContext);
+    const set_needs_list = useContext(NeedsListSetterContext);
     const [show_ore_popup, set_show_ore_popup] = useState(false);
     const [show_building_popup, set_show_building_popup] = useState(false);
     const [resetOpen, setResetOpen] = useState(false);
@@ -80,7 +80,7 @@ function AppWithContexts() {
                 <p className="text-sm text-muted-foreground">设定目标产量，规划每一条生产线</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-                <GameVersion onChange={() => set_needs_list({})}/>
+                <GameVersion/>
                 <Dialog><DialogTrigger asChild><Button variant="outline" size="sm"><Settings2 className="size-4"/>参数设置</Button></DialogTrigger>
                     <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>采矿参数与计算设置</DialogTitle><DialogDescription>更改会立即应用，自动保存在当前浏览器</DialogDescription></DialogHeader><Settings/></DialogContent>
                 </Dialog>
@@ -92,10 +92,10 @@ function AppWithContexts() {
                 <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="flex size-7 items-center justify-center rounded-md bg-muted"><Layers3 className="size-4"/></span><CardTitle className="text-base">生产目标</CardTitle><Badge variant="secondary" className="font-mono text-xs">{Object.keys(needs_list).length}</Badge></div>
                     <Tabs value={settings.is_time_unit_minute ? 'minute' : 'second'} onValueChange={value => set_settings({is_time_unit_minute: value === 'minute'})} aria-label="产量时间单位"><TabsList className="h-8"><TabsTrigger className="px-3 text-xs" value="minute">每分钟</TabsTrigger><TabsTrigger className="px-3 text-xs" value="second">每秒</TabsTrigger></TabsList></Tabs>
                 </div>
-                <CardDescription className="text-xs">添加需要生产的物品，计算原料、建筑与电力需求</CardDescription>
+                <CardDescription className="text-xs">添加需要生产的物品，计算原料、建筑与电力需求。配方分叉仅用于当前目标，保存需求列表可保留完整方案。</CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6"><NeedsList needs_list={needs_list} set_needs_list={set_needs_list} set_show_ore_popup={set_show_ore_popup} set_show_building_popup={set_show_building_popup}/></CardContent>
-            <div className="flex flex-wrap items-center gap-4 border-t bg-muted/25 px-4 py-3 sm:px-6"><NeedsListStorage needs_list={needs_list} set_needs_list={set_needs_list}/><span className="hidden h-5 border-l sm:block"/><SchemeStorage/><span className="ml-auto hidden items-center gap-1.5 text-[11px] text-muted-foreground xl:flex"><span className={`size-1.5 rounded-full ${storageWarning ? 'bg-amber-500' : 'bg-emerald-500'}`}/>{storageWarning ? '自动保存不可用' : '策略与参数自动保存'}</span></div>
+            <div className="flex flex-wrap items-center gap-4 border-t bg-muted/25 px-4 py-3 sm:px-6"><NeedsListStorage/><span className="hidden h-5 border-l sm:block"/><SchemeStorage/><span className="ml-auto hidden items-center gap-1.5 text-[11px] text-muted-foreground xl:flex"><span className={`size-1.5 rounded-full ${storageWarning ? 'bg-amber-500' : 'bg-emerald-500'}`}/>{storageWarning ? '自动保存不可用' : '策略与参数自动保存，分叉需命名保存'}</span></div>
         </Card>
         <Card className="gap-0 py-0 shadow-none">
             <details className="group" open>

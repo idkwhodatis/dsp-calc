@@ -174,7 +174,7 @@ describe('rightmost production logistics column', () => {
 
     it('gives grouped sources a separate rightmost cell and includes every source rate and alternatives', async () => {
         const user = userEvent.setup();
-        localStorage.setItem('auto_settings', JSON.stringify({production_sources: [{id: 'manual-iron', target_item: '铁块', output_per_minute: 150,
+        localStorage.setItem('auto_settings', JSON.stringify({production_sources: [{id: 'manual-iron', target_item: '铁块', output_per_minute: 150, standalone: true,
             recipe_choice: 1, building: 0, proliferator_mode: 0, proliferator_points: 0}]}));
         render(<Overview/>);
         const group = screen.getByRole('region', {name: '铁块生产来源'});
@@ -185,12 +185,12 @@ describe('rightmost production logistics column', () => {
         await user.click(within(row).getByRole('button', {name: /铁块物流估算/}));
         const panel = screen.getByRole('dialog', {name: '铁块物流估算'});
         const sources = within(panel).getByRole('region', {name: '各来源物流明细'});
-        expect(within(sources).getByText('自动产线')).toBeInTheDocument();
-        expect(within(sources).getByText('手动产线 1')).toBeInTheDocument();
+        expect(within(sources).getByText('需求产线')).toBeInTheDocument();
+        expect(within(sources).getByText('现有产线 1')).toBeInTheDocument();
         expect(within(sources).getByText('450.00 / min')).toBeInTheDocument();
         expect(within(sources).getByText('150.00 / min')).toBeInTheDocument();
-        await user.click(within(sources).getByText('手动产线 1'));
-        expect(within(sources).getByRole('region', {name: '手动产线 1出料传送带'})).toBeVisible();
-        expect(within(sources).getByRole('region', {name: '手动产线 1单台满载出料分拣器'})).toBeVisible();
+        await user.click(within(sources).getByText('现有产线 1'));
+        expect(within(sources).getByRole('region', {name: '现有产线 1出料传送带'})).toBeVisible();
+        expect(within(sources).getByRole('region', {name: '现有产线 1单台满载出料分拣器'})).toBeVisible();
     });
 });

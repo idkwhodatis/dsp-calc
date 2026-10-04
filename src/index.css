@@ -80,3 +80,22 @@
   ::selection { background: var(--foreground); color: var(--background); }
   html { scroll-padding-top: 5rem; }
 }
+
+/* A sibling overlay keeps ordinary recipe selection and keyboard order intact. */
+.dsp-recipe-fork {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dsp-recipe-option:hover > .dsp-recipe-fork,
+.dsp-recipe-option:focus-within > .dsp-recipe-fork {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .dsp-recipe-fork {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

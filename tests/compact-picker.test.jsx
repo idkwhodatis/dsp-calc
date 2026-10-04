@@ -7,7 +7,8 @@ import {CompactModeContext, GameInfoContext, GlobalStateContext} from '../src/co
 import {TooltipProvider} from '../src/components/ui/tooltip';
 
 const gameInfo = {
-    all_target_items: ['铁块', '铜块', '处理器', '氢'],
+    all_target_items: ['铁块', '铜块', '处理器', '氢', '传送带'],
+    game_data: {item_grid: {'铁块': 1101, '铜块': 1102, '处理器': 1304, '非目标物品': 1103, '传送带': 2201, '边界': 1305}},
     icon_grid: {
         ncol: 5,
         nrow: 3,
@@ -48,7 +49,7 @@ describe('compact game-layout item picker', () => {
     it('preserves original row/column positions and gaps using dense icon-only buttons', async () => {
         const {user} = renderPicker();
         const dialog = await openPicker(user);
-        const grid = within(dialog).getByRole('group', {name: '游戏物品网格'});
+        const grid = within(dialog).getByRole('group', {name: '物品固定位置网格'});
         expect(grid).toHaveStyle({gridTemplateColumns: 'repeat(5, var(--picker-tile-size))', gridTemplateRows: 'repeat(3, var(--picker-tile-size))'});
         expect(within(grid).getAllByRole('button')).toHaveLength(3);
         const iron = within(grid).getByRole('button', {name: '选择铁块'});
@@ -60,7 +61,9 @@ describe('compact game-layout item picker', () => {
         expect(within(dialog).queryByRole('button', {name: '选择非目标物品'})).not.toBeInTheDocument();
         expect(dialog.style.getPropertyValue('--picker-tile-size')).toBe('44px');
         expect(dialog).toHaveClass('max-h-[90dvh]', 'max-w-[calc(100vw-1rem)]', 'overflow-hidden');
-        expect(grid.parentElement.parentElement).toHaveClass('overflow-auto');
+        expect(grid.closest('[aria-label="游戏物品布局"]')).toHaveClass('overflow-auto');
+        expect(grid.querySelectorAll('[data-slot="picker-empty-slot"]')).toHaveLength(12);
+        expect(within(dialog).getByLabelText('第 2 行')).toHaveTextContent('2');
     });
 
     it('shows names in a tooltip on compact tiles and exposes the current choice', async () => {
@@ -77,7 +80,7 @@ describe('compact game-layout item picker', () => {
         const {user} = renderPicker({mode: 'mobile'});
         const dialog = await openPicker(user);
         expect(dialog.style.getPropertyValue('--picker-tile-size')).toBe('32px');
-        const grid = within(dialog).getByRole('group', {name: '游戏物品网格'});
+        const grid = within(dialog).getByRole('group', {name: '物品固定位置网格'});
         expect(grid).toHaveStyle({gridTemplateColumns: 'repeat(5, var(--picker-tile-size))'});
         const icon = within(within(grid).getByRole('button', {name: '选择铁块'})).getByRole('img');
         expect(icon).toHaveStyle({width: '28px', height: '28px'});
@@ -87,6 +90,7 @@ describe('compact game-layout item picker', () => {
     it('keeps targets without a game-grid slot selectable in a compact fallback group', async () => {
         const {user, onSelect} = renderPicker();
         const dialog = await openPicker(user);
+        await user.click(within(dialog).getByRole('tab', {name: '其它', exact: true}));
         const extra = within(dialog).getByRole('group', {name: '其它可选物品'});
         const hydrogen = within(extra).getByRole('button', {name: '选择氢', exact: true});
         expect(within(extra).getAllByRole('button')).toHaveLength(1);
@@ -102,7 +106,7 @@ describe('compact game-layout item picker', () => {
         const result = within(dialog).getByRole('button', {name: '选择铁块', exact: true});
         expect(result).toHaveTextContent('铁块');
         expect(result).toHaveClass('h-9', 'justify-start');
-        expect(within(dialog).queryByRole('group', {name: '游戏物品网格'})).not.toBeInTheDocument();
+        expect(within(dialog).queryByRole('group', {name: '物品固定位置网格'})).not.toBeInTheDocument();
         // "tk" also matches 铜块; Enter follows the visible ranking, not a guessed tie-break.
         const firstResult = within(dialog).getAllByRole('button', {name: /^选择/})[0];
         const firstName = firstResult.getAttribute('aria-label').replace(/^选择/, '');
@@ -134,7 +138,7 @@ describe('compact game-layout item picker', () => {
         expect(onSelect).not.toHaveBeenCalled();
         await user.click(within(dialog).getByRole('button', {name: '清除搜索'}));
         expect(search).toHaveValue('');
-        expect(within(dialog).getByRole('group', {name: '游戏物品网格'})).toBeInTheDocument();
+        expect(within(dialog).getByRole('group', {name: '物品固定位置网格'})).toBeInTheDocument();
         await user.type(search, 'tk');
         await user.keyboard('{Escape}');
         expect(screen.getByRole('button', {name: '添加需求物品'})).toHaveFocus();
@@ -142,7 +146,7 @@ describe('compact game-layout item picker', () => {
         search = within(dialog).getByRole('searchbox');
         expect(search).toHaveValue('');
         expect(search).toHaveFocus();
-        expect(within(dialog).getByRole('group', {name: '游戏物品网格'})).toBeInTheDocument();
+        expect(within(dialog).getByRole('group', {name: '物品固定位置网格'})).toBeInTheDocument();
     });
 
     it('keeps the dialog open if the consuming component rejects a selection', async () => {
@@ -157,7 +161,8 @@ describe('compact game-layout item picker', () => {
     it('handles datasets that provide targets without any icon layout', async () => {
         const {user, onSelect} = renderPicker({info: {all_target_items: ['铁块', '氢']}});
         const dialog = await openPicker(user);
-        expect(within(dialog).queryByRole('group', {name: '游戏物品网格'})).not.toBeInTheDocument();
+        expect(within(dialog).queryByRole('group', {name: '物品固定位置网格'})).not.toBeInTheDocument();
+        await user.click(within(dialog).getByRole('tab', {name: '其它', exact: true}));
         const extra = within(dialog).getByRole('group', {name: '其它可选物品'});
         expect(within(extra).getAllByRole('button')).toHaveLength(2);
         await user.click(within(extra).getByRole('button', {name: '选择铁块', exact: true}));

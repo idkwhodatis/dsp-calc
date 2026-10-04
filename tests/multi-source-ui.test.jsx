@@ -1,16 +1,22 @@
 import '@testing-library/jest-dom/vitest';
-import {useContext, useState} from 'react';
+import {useContext, useEffect, useRef, useState} from 'react';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {cleanup, render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {CompactModeContext, ContextProvider, SettingsSetterContext} from '../src/contexts.jsx';
+import {CompactModeContext, ContextProvider, GlobalStateContext, SettingsSetterContext} from '../src/contexts.jsx';
 import {Result} from '../src/result.jsx';
 import {default_game_data} from '../src/GameData.jsx';
 import {init_scheme_data} from '../src/scheme_data.jsx';
 import {TooltipProvider} from '../src/components/ui/tooltip';
 
+let runtimeSources;
+let activeState;
+const activeSources = () => activeState.settings.production_sources;
+
 beforeEach(() => {
     localStorage.clear();
+    runtimeSources = [];
+    activeState = undefined;
     vi.spyOn(console, 'log').mockImplementation(() => {});
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -20,11 +26,26 @@ function UnitSwitch() {
     return <button onClick={() => setSettings({is_time_unit_minute: false})}>显示每秒</button>;
 }
 
+function RuntimeFixtures() {
+    const setSettings = useContext(SettingsSetterContext);
+    const initialized = useRef(false);
+    useEffect(() => {
+        if (!initialized.current) {
+            initialized.current = true;
+            if (runtimeSources.length) setSettings({production_sources: runtimeSources});
+        }
+    }, [setSettings]);
+    const state = useContext(GlobalStateContext);
+    useEffect(() => { activeState = state; }, [state]);
+    return null;
+}
+
 function Overview({mode = 'full', initialNeeds = {'重氢': 300}}) {
     const [needs, setNeeds] = useState(initialNeeds);
     const [oreOpen, setOreOpen] = useState(false);
     const [buildingsOpen, setBuildingsOpen] = useState(false);
     return <TooltipProvider><ContextProvider><CompactModeContext.Provider value={mode}>
+        <RuntimeFixtures/>
         <UnitSwitch/>
         <Result needs_list={needs} set_needs_list={setNeeds} show_ore_popup={oreOpen} set_show_ore_popup={setOreOpen}
             show_building_popup={buildingsOpen} set_show_building_popup={setBuildingsOpen}/>
@@ -32,17 +53,18 @@ function Overview({mode = 'full', initialNeeds = {'重氢': 300}}) {
 }
 
 function source(item = '重氢', output = 0, id = 'line-1', patch = {}) {
-    return {id, target_item: item, output_per_minute: output, recipe_choice: 1, building: 0,
+    return {id, target_item: item, scope: patch.standalone ? 'global' : 'plan', output_per_minute: output, recipe_choice: 1, building: 0,
         proliferator_mode: 0, proliferator_points: 0, ...patch};
 }
-function seed(sources) { localStorage.setItem('auto_settings', JSON.stringify({production_sources: sources})); }
+// Bound fixtures are active-plan state, never legacy/global autosaves.
+function seed(sources) { runtimeSources = sources; }
 function productOrder() {
     return Array.from(screen.getByRole('region', {name: '生产结果表，可横向滚动'}).querySelectorAll('tbody > tr[data-product]'), row => row.dataset.product);
 }
-function manual(item = '重氢', ordinal = 1) { return screen.getByRole('article', {name: `${item}手动产线 ${ordinal}`}); }
-function auto(item = '重氢') { return screen.getByRole('article', {name: `${item}自动产线`}); }
+function manual(item = '重氢', ordinal = 1) { return screen.getByRole('article', {name: `${item}现有产线 ${ordinal}`}); }
+function auto(item = '重氢') { return screen.getByRole('article', {name: `${item}需求产线`}); }
 async function allocate(user, value, item = '重氢', ordinal = 1) {
-    const input = within(manual(item, ordinal)).getByRole('textbox', {name: `${item}手动产线 ${ordinal}分配产量`});
+    const input = within(manual(item, ordinal)).getByRole('textbox', {name: `${item}现有产线 ${ordinal}分配产量`});
     await user.clear(input);
     await user.type(input, String(value));
     await user.keyboard('{Enter}');
@@ -70,12 +92,12 @@ describe('product-grouped independent source cards', () => {
         expect(cards).not.toHaveClass('flex-col');
         expect(within(cards).getAllByRole('article')).toHaveLength(2);
         expect(within(group).getByLabelText('重氢总需求')).toHaveTextContent(/^300.00$/);
-        expect(within(auto()).getByLabelText('重氢自动产线产量')).toHaveTextContent('300.00');
+        expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent('300.00');
         expect(within(manual()).getByRole('textbox')).toHaveValue('0.00');
         await allocate(user, 150);
         expect(productOrder()).toEqual(order);
         expect(within(group).getByLabelText('重氢总需求')).toHaveTextContent(/^300.00$/);
-        expect(within(auto()).getByLabelText('重氢自动产线产量')).toHaveTextContent('150.00');
+        expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent('150.00');
         expect(within(manual()).getByRole('textbox')).toHaveValue('150.00');
         expect(within(group).getByLabelText('重氢合计生产')).toHaveTextContent('300.00 / min');
     });
@@ -85,10 +107,10 @@ describe('product-grouped independent source cards', () => {
         seed([source()]);
         render(<Overview/>);
         await allocate(user, 300);
-        expect(within(auto()).getByLabelText('重氢自动产线产量')).toHaveTextContent(/^0.00$/);
+        expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent(/^0.00$/);
         expect(screen.queryByText(/超额分配/)).not.toBeInTheDocument();
         await allocate(user, 400);
-        expect(within(auto()).getByLabelText('重氢自动产线产量')).toHaveTextContent(/^0.00$/);
+        expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent(/^0.00$/);
         expect(screen.getByText(/超额分配/)).toHaveTextContent('100.00 / min');
         expect(screen.getByLabelText('重氢总需求')).toHaveTextContent(/^300.00$/);
         expect(screen.getByLabelText('重氢合计生产')).toHaveTextContent('400.00 / min');
@@ -106,12 +128,12 @@ describe('product-grouped independent source cards', () => {
         expect(within(manual('重氢', 2)).getByRole('textbox')).toHaveValue('0.00');
         const thirdId = manual('重氢', 3).dataset.sourceId;
         expect(new Set(within(cards).getAllByRole('article').map(card => card.dataset.sourceId)).size).toBe(4);
-        await user.click(within(manual('重氢', 2)).getByRole('button', {name: '删除重氢手动产线 2'}));
+        await user.click(within(manual('重氢', 2)).getByRole('button', {name: '删除重氢现有产线 2'}));
         expect(manual().dataset.sourceId).toBe(firstId);
         expect(manual('重氢', 2).dataset.sourceId).toBe(thirdId);
-        await user.click(within(manual()).getByRole('button', {name: '删除重氢手动产线 1'}));
-        expect(within(auto()).getByLabelText('重氢自动产线产量')).toHaveTextContent('300.00');
-        await user.click(within(manual()).getByRole('button', {name: '删除重氢手动产线 1'}));
+        await user.click(within(manual()).getByRole('button', {name: '删除重氢现有产线 1'}));
+        expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent('300.00');
+        await user.click(within(manual()).getByRole('button', {name: '删除重氢现有产线 1'}));
         expect(screen.queryByRole('region', {name: '重氢生产来源'})).not.toBeInTheDocument();
         expect(screen.getByRole('textbox', {name: '重氢产能，等比例调整需求'})).toHaveValue('300.00');
     });
@@ -144,10 +166,10 @@ describe('product-grouped independent source cards', () => {
         expect(input).toHaveAttribute('aria-invalid', 'true');
         await user.keyboard('{Enter}');
         expect(input).toHaveValue('150.00');
-        expect(within(auto()).getByLabelText('重氢自动产线产量')).toHaveTextContent('150.00');
+        expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent('150.00');
         await user.click(screen.getByRole('button', {name: '显示每秒'}));
         expect(within(manual()).getByRole('textbox')).toHaveValue('2.50');
-        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources[0].output_per_minute).toBe(150);
+        expect(activeSources()[0].output_per_minute).toBe(150);
     });
 
     it.each(['full', 'compact', 'mobile'])('keeps readable card controls and horizontal scrolling in %s mode', mode => {
@@ -186,7 +208,8 @@ describe('product-grouped independent source cards', () => {
         const baseline = render(<Overview initialNeeds={{'铁块': 300}}/>);
         const summary = screen.getByRole('complementary', {name: '生产统计'}).textContent;
         baseline.unmount();
-        localStorage.setItem('auto_settings', JSON.stringify({...settings, production_sources: [source('铁块')]}));
+        localStorage.setItem('auto_settings', JSON.stringify(settings));
+        seed([source('铁块')]);
         render(<Overview initialNeeds={{'铁块': 300}}/>);
         expect(screen.getByRole('complementary', {name: '生产统计'}).textContent).toBe(summary);
     });
@@ -216,28 +239,31 @@ describe('product-grouped independent source cards', () => {
         seed([source('铁块', 0, 'standalone-iron', {standalone: true})]);
         render(<Overview initialNeeds={{}}/>);
         expect(screen.getByLabelText('铁块总需求')).toHaveTextContent(/^0.00$/);
-        expect(within(auto('铁块')).getByLabelText('铁块自动产线产量')).toHaveTextContent(/^0.00$/);
+        expect(within(auto('铁块')).getByLabelText('铁块需求产线产量')).toHaveTextContent(/^0.00$/);
         expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('0.00');
         expect(screen.queryByText('开始规划你的生产线')).not.toBeInTheDocument();
     });
 
-    it('keeps unrelated saved sources paused without phantom hydrogen or deuterium rows after reload', () => {
+    it('shows unused runtime plan sources as paused without phantom rows and discards them on reload', () => {
         seed([source('重氢', 150), source('氢', 30, 'hydrogen')]);
         const first = render(<Overview initialNeeds={{'铁块': 60}}/>);
         expect(productOrder()).not.toContain('重氢');
         expect(productOrder()).not.toContain('氢');
         const status = screen.getByText('已暂停2条未被当前需求使用的来源').closest('details');
         expect(status).not.toHaveAttribute('open');
-        expect(screen.queryByRole('article', {name: '重氢手动产线 1'})).not.toBeInTheDocument();
-        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources).toHaveLength(2);
+        expect(screen.queryByRole('article', {name: '重氢现有产线 1'})).not.toBeInTheDocument();
+        expect(activeSources()).toHaveLength(2);
+        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources).toEqual([]);
         first.unmount();
+        runtimeSources = [];
         render(<Overview initialNeeds={{'铁块': 60}}/>);
         expect(productOrder()).not.toContain('重氢');
         expect(productOrder()).not.toContain('氢');
-        expect(screen.getByText('已暂停2条未被当前需求使用的来源')).toBeInTheDocument();
+        expect(screen.queryByText('已暂停2条未被当前需求使用的来源')).not.toBeInTheDocument();
+        expect(activeSources()).toEqual([]);
     });
 
-    it('shows saved rates and lets a paused source become independent, survive reload, and pass that intent to an added source', async () => {
+    it('lets a paused runtime source become deliberately independent, survive reload, and pass its intent to an added source', async () => {
         const user = userEvent.setup();
         seed([source('铁块', 60)]);
         const first = render(<Overview initialNeeds={{}}/>);
@@ -247,8 +273,10 @@ describe('product-grouped independent source cards', () => {
         expect(screen.queryByText(/已暂停.*条未被当前需求使用的来源/)).not.toBeInTheDocument();
         expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('60.00');
         await user.click(screen.getByRole('button', {name: '添加铁块产线'}));
-        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources.every(source => source.standalone)).toBe(true);
+        expect(activeSources().every(source => source.standalone && source.scope === 'global')).toBe(true);
+        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources).toEqual(activeSources());
         first.unmount();
+        runtimeSources = [];
         render(<Overview initialNeeds={{}}/>);
         expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('60.00');
         expect(manual('铁块', 2)).toBeInTheDocument();
@@ -261,14 +289,14 @@ describe('product-grouped independent source cards', () => {
         await user.click(screen.getByText('已暂停1条未被当前需求使用的来源'));
         await user.click(screen.getByRole('button', {name: '显示每秒'}));
         expect(screen.getByText('铁块 · 2.50 / s')).toBeVisible();
-        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources[0].output_per_minute).toBe(150);
+        expect(activeSources()[0].output_per_minute).toBe(150);
         await user.click(screen.getByRole('button', {name: '删除已暂停来源 1 铁块'}));
         expect(screen.queryByText(/已暂停.*条未被当前需求使用的来源/)).not.toBeInTheDocument();
-        expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources).toHaveLength(0);
+        expect(activeSources()).toHaveLength(0);
         expect(screen.getByText('开始规划你的生产线')).toBeInTheDocument();
     });
 
-    it.each(['已删除的物品', '__proto__', 'constructor'])('surfaces unknown saved target %s and allows removing it', async item => {
+    it.each(['已删除的物品', '__proto__', 'constructor'])('surfaces unknown active-plan target %s and allows removing it', async item => {
         const user = userEvent.setup();
         seed([source(item, 150)]);
         render(<Overview initialNeeds={{}}/>);
@@ -285,6 +313,6 @@ describe('product-grouped independent source cards', () => {
         expect(within(manual('铁块')).getByRole('alert')).toHaveTextContent('来源配方已失效');
         await user.click(within(manual('铁块')).getByRole('button', {name: '铁块配方 1', exact: true}));
         expect(within(manual('铁块')).queryByRole('alert')).not.toBeInTheDocument();
-        expect(within(auto('铁块')).getByLabelText('铁块自动产线产量')).toHaveTextContent('150.00');
+        expect(within(auto('铁块')).getByLabelText('铁块需求产线产量')).toHaveTextContent('150.00');
     });
 });

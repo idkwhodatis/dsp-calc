@@ -1,7 +1,7 @@
 import {useContext} from 'react';
-import {GlobalStateContext, SchemeDataSetterContext, SettingsSetterContext} from './contexts.jsx';
+import {GlobalStateContext, PlanLoaderContext} from './contexts.jsx';
 import {SavedPresets} from './components/saved-presets.jsx';
-import {normalizeSourceIds} from './lib/source-storage.js';
+import {createStrategySnapshot} from './lib/plan-state.js';
 
 const DEFAULT_SCHEME_DATA = {
     "item_recipe_choices": {"氢": 1},
@@ -71,18 +71,12 @@ export function init_scheme_data(game_data) {
 
 export function SchemeStorage() {
     const global_state = useContext(GlobalStateContext);
-    const set_scheme_data = useContext(SchemeDataSetterContext);
-    const set_settings = useContext(SettingsSetterContext);
+    const load_plan = useContext(PlanLoaderContext);
     const game_name = global_state.game_data.game_name;
 
-    function loadScheme(saved) {
-        const {production_sources = [], ...scheme} = saved;
-        if (!Array.isArray(production_sources)) throw new Error('方案中的产线来源格式不正确，当前计算未被修改。');
-        set_scheme_data(scheme);
-        set_settings({production_sources: normalizeSourceIds(production_sources), natural_production_line: []});
-    }
-
     return <SavedPresets key={game_name} storageKey="scheme_data" scope={game_name}
-                         label="生产策略" noun="方案" value={{...global_state.scheme_data, production_sources: global_state.settings.production_sources || []}}
-                         onLoad={loadScheme}/>;
+                         label="生产策略" noun="方案"
+                         saveDescription="保存配方、建筑、增产与成本策略，以及独立现有产线。若要保存当前目标及配方分叉，请使用需求列表保存完整方案。"
+                         value={createStrategySnapshot(global_state.scheme_data, global_state.settings)}
+                         onLoad={saved => load_plan(saved, 'strategy')}/>;
 }

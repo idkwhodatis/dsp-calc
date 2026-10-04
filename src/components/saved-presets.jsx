@@ -8,7 +8,7 @@ import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, 
 import {getStorageSnapshot, isStorageRecord, readStorageObject, subscribeStorage, updateScopedStorage} from '../lib/storage.js';
 
 /** A shared, game-scoped preset manager for both legacy save formats. */
-export function SavedPresets({storageKey, scope, label, noun, value, onLoad}) {
+export function SavedPresets({storageKey, scope, label, noun, value, onLoad, saveDescription}) {
     const id = useId();
     const raw = useSyncExternalStore(subscribeStorage, () => getStorageSnapshot(storageKey), () => null);
     const presets = useMemo(() => {
@@ -126,7 +126,7 @@ export function SavedPresets({storageKey, scope, label, noun, value, onLoad}) {
                 <DialogHeader>
                     <DialogTitle>{dialog === 'delete' ? `删除${noun}` : `保存${noun}`}</DialogTitle>
                     <DialogDescription>
-                        {dialog === 'delete' ? `删除「${name}」后无法恢复，当前计算内容不会改变。` : `保存在此浏览器中，仅用于当前游戏版本。`}
+                        {dialog === 'delete' ? `删除「${name}」后无法恢复，当前计算内容不会改变。` : saveDescription || `保存在此浏览器中，仅用于当前游戏版本。`}
                     </DialogDescription>
                 </DialogHeader>
                 {dialog === 'save' ? <form onSubmit={save} className="space-y-5">

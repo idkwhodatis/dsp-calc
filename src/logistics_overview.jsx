@@ -117,7 +117,7 @@ export function LogisticsOverview({item, estimate}) {
             {estimate.sources?.length > 0 && <section className="space-y-2 border-t pt-3" aria-label="各来源物流明细">
                 <h4 className="text-base font-medium">各来源</h4>
                 {estimate.sources.map(source => {
-                    const label = source.kind === 'automatic' ? '自动产线' : source.kind === 'byproduct' ? '副产物供给' : `手动产线 ${++manualOrdinal}`;
+                    const label = source.kind === 'automatic' ? '需求产线' : source.kind === 'byproduct' ? '副产物供给' : `现有产线 ${++manualOrdinal}`;
                     return <details key={source.id} className="rounded-md border px-2 py-2">
                         <summary className="cursor-pointer text-base"><span className="font-medium">{label}</span><span className="ml-2 tabular-nums text-muted-foreground">{rate(source.outputPerSecond)} / {unit}</span></summary>
                         <div className="mt-3 space-y-3">

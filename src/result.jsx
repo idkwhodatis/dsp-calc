@@ -1,8 +1,8 @@
-import {useContext, useMemo, useState, useEffect} from 'react';
+import {useContext, useMemo, useState, useEffect, useRef} from 'react';
 import {CompactModeContext, GlobalStateContext, SchemeDataSetterContext, SettingsSetterContext} from './contexts';
 import {ItemIcon} from './icon';
 import {PausedProductionSources, ProductionSourceCard, ProductionSourceGroup} from './natural_production_line';
-import {createProductionSource, fromDisplayRate, getProductionEnergy, isMiningBuilding} from './production_sources.js';
+import {createProductionSource, fromDisplayRate, getProductionEnergy, isItemRequired, isMiningBuilding} from './production_sources.js';
 import {describeRecipe, HorizontalMultiButtonSelect, Recipe} from './recipe';
 import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
 import {Button} from './components/ui/button';
@@ -13,6 +13,7 @@ import {Tooltip, TooltipContent, TooltipTrigger} from './components/ui/tooltip';
 import {cn} from './lib/utils';
 import {estimateLogistics} from './logistics.js';
 import {LogisticsOverview} from './logistics_overview.jsx';
+import {isPlanOwnedSource} from './lib/plan-state.js';
 
 const ValueWithDifference = ({currentValue, previousValue}) => {
     const global_state = useContext(GlobalStateContext);
@@ -39,7 +40,7 @@ const ValueWithDifference = ({currentValue, previousValue}) => {
     );
 };
 
-export function RecipeSelect({item, choice, onChange, compact}) {
+export function RecipeSelect({item, choice, onChange, onFork, compact}) {
     const global_state = useContext(GlobalStateContext);
     const {game_data, item_data} = global_state;
     if (item_data[item].length === 2) {
@@ -48,12 +49,24 @@ export function RecipeSelect({item, choice, onChange, compact}) {
     return <div className="dsp-recipe-options flex w-fit max-w-80 flex-col gap-0.5 rounded-md border bg-muted/30 p-0.5" role="group" aria-label={`${item}配方`}>
         {item_data[item].slice(1).map((recipe_index, index) => {
             const value = index + 1;
-            return <Button key={recipe_index} type="button" variant="ghost" size="sm"
+            const recipeButton = <Button key={recipe_index} type="button" variant="ghost" size="sm"
                 aria-label={`${item}配方 ${value}`} aria-description={describeRecipe(game_data.recipe_data[recipe_index])} aria-pressed={choice == value}
-                className={cn("h-auto min-h-8 justify-start rounded-md px-1 py-1.5", choice == value && "bg-background shadow-sm ring-1 ring-border hover:bg-background")}
+                className={cn("h-auto min-h-8 justify-start rounded-md px-1 py-1.5", onFork && "w-full", choice == value && "bg-background shadow-sm ring-1 ring-border hover:bg-background")}
                 onClick={() => onChange(value)}>
                 <Recipe recipe={game_data.recipe_data[recipe_index]} compact={compact}/>
             </Button>;
+            if (!onFork) return recipeButton;
+            return <div key={recipe_index} className="dsp-recipe-option relative">
+                {recipeButton}
+                {choice != value && <Button type="button" variant="ghost" size="icon-xs"
+                    className="dsp-recipe-fork absolute -right-1 -top-1 z-10 size-6 rounded-full p-0 hover:bg-transparent"
+                    aria-label={`使用${item}配方 ${value}添加产线`}
+                    aria-description={`${describeRecipe(game_data.recipe_data[recipe_index])}；新产线初始产量为 0，保留当前需求配方`}
+                    title="使用此配方添加产线"
+                    onClick={event => { event.stopPropagation(); onFork(value); }}>
+                    <span aria-hidden="true" className="flex size-4 items-center justify-center rounded-full border bg-background text-base leading-none shadow-sm">+</span>
+                </Button>}
+            </div>;
         })}
     </div>;
 }
@@ -185,6 +198,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     const set_scheme_data = useContext(SchemeDataSetterContext);
     const set_settings = useContext(SettingsSetterContext);
     const compact_mode = useContext(CompactModeContext);
+    const result_ref = useRef(null);
+    const pending_source_focus = useRef(null);
     const is_compact = compact_mode !== "full";
     const is_mobile = compact_mode === "mobile";
 
@@ -204,6 +219,18 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         const res = global_state.calculate(needs_list);
         return res;
     }, [global_state, needs_list]);
+
+    useEffect(() => {
+        if (!pending_source_focus.current) return;
+        const source = Array.from(result_ref.current?.querySelectorAll('[data-source-id]') || [])
+            .find(element => element.dataset.sourceId === pending_source_focus.current);
+        const allocation = source?.querySelector('input');
+        if (allocation) {
+            allocation.focus({preventScroll: true});
+            allocation.scrollIntoView?.({block: 'nearest', inline: 'nearest'});
+            pending_source_focus.current = null;
+        }
+    }, [source_details]);
 
     // 用于存储历史值的数组，最多保留两个版本
     const [historyValues, setHistoryValues] = useState([]);
@@ -296,9 +323,28 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     const source_groups = source_details?.groups || {};
     const ordered_items = [...new Set([...(source_details?.order || Object.keys(result_dict)), ...Object.keys(source_groups)])];
 
-    function add_source(item) {
-        const standalone = production_sources.some(source => source.target_item === item && source.standalone);
+    function add_source(item, recipe_choice = scheme_data.item_recipe_choices[item], focus_new_source = false) {
+        const required = isItemRequired(global_state, needs_list, item);
+        const standalone = production_sources.some(source => source.target_item === item && source.standalone)
+            || !required;
         const source = createProductionSource(global_state, item, {standalone});
+        // A recipe fork belongs to this plan even when its surplus-only row
+        // needs engine independence to remain visible. Group additions inherit it.
+        source.scope = focus_new_source || required || production_sources.some(existing => existing.target_item === item && isPlanOwnedSource(existing))
+            ? 'plan' : 'global';
+        // Fork the clicked recipe's own equipment settings, never the automatic
+        // recipe's factory index or an unsupported proliferation mode.
+        const recipe = game_data.recipe_data[item_data[item][recipe_choice]];
+        const config = scheme_data.scheme_for_recipe[item_data[item][recipe_choice]] || {};
+        const building = Number(config['建筑']);
+        const mode = Number(config['增产模式']);
+        const points = Number(config['增产点数']);
+        source.recipe_choice = Number(recipe_choice);
+        source.building = Number.isInteger(building) && game_data.factory_data[recipe['设施']]?.[building] ? building : 0;
+        source.proliferator_mode = Number.isInteger(mode) && mode > 0 && mode <= 4 && (recipe['增产'] & (1 << (mode - 1)))
+            ? mode : recipe['增产'] === 8 ? 4 : 0;
+        source.proliferator_points = Number.isInteger(points) && game_data.proliferator_effect[points] && global_state.proliferator_price[points] !== -1 ? points : 0;
+        if (focus_new_source) pending_source_focus.current = source.id;
         set_settings(previous => ({production_sources: [...(previous.production_sources || []), source]}));
     }
 
@@ -429,7 +475,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                     <RatioAdjustInput value={factory_number} {...ratioProps} label={`${i}工厂数量，等比例调整需求`}/>
                 </div> : <span className="text-muted-foreground">—</span>}
             </td>
-            <td className="px-2 py-3"><RecipeSelect item={i} onChange={change_recipe} choice={scheme_data.item_recipe_choices[i]} compact={compact_mode}/></td>
+            <td className="px-2 py-3"><RecipeSelect item={i} onChange={change_recipe} onFork={value => add_source(i, value, true)} choice={scheme_data.item_recipe_choices[i]} compact={compact_mode}/></td>
             <td className="px-2 py-3"><ProModeSelect recipe_id={recipe_id} onChange={change_pro_mode} choice={scheme_data.scheme_for_recipe[recipe_id]["增产模式"]}/></td>
             <td className="px-2 py-3"><ProNumSelect onChange={change_pro_num} choice={scheme_data.scheme_for_recipe[recipe_id]["增产点数"]} icon_size={mob_btn_icon}/></td>
             <td className="px-2 py-3"><FactorySelect recipe_id={recipe_id} onChange={change_factory} choice={scheme_data.scheme_for_recipe[recipe_id]["建筑"]} icon_size={mob_btn_icon}/></td>
@@ -549,7 +595,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         <CardContent className="space-y-2 px-3 pb-4">{surplus_doms.length > 0 ? surplus_doms : <p className="text-sm text-muted-foreground">没有多余产物</p>}</CardContent>
     </Card>;
 
-    return <section className="dsp-result w-fit max-w-full space-y-4" data-density="comfortable" aria-labelledby="production-heading">
+    return <section ref={result_ref} className="dsp-result w-fit max-w-full space-y-4" data-density="comfortable" aria-labelledby="production-heading">
         <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
                 <p className="mb-1 text-xs tracking-wider text-muted-foreground uppercase">Production overview</p>
@@ -563,7 +609,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
             </div>
         </div>
         <PausedProductionSources sources={source_details?.paused_sources}
-            onEnable={id => update_source(id, {standalone: true})} onRemove={remove_source}/>
+            onEnable={id => update_source(id, {standalone: true, scope: 'global'})} onRemove={remove_source}/>
         {(source_details?.errors?.length > 0 || production_sources.some(source => !has_item(source.target_item))) && <div role="alert" className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-base text-destructive">
             {(source_details.errors || []).map((error, index) => <p key={index}>{typeof error === 'string' ? error : error.message || String(error)}</p>)}
             {production_sources.filter(source => !has_item(source.target_item)).map(source => <Button key={source.id} type="button" variant="outline" size="sm"

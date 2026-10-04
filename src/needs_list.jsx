@@ -1,6 +1,6 @@
 import {useContext, useEffect, useId, useState} from 'react';
 import {Factory, Gem, Plus, PlusSquare, Target, Trash2, X} from 'lucide-react';
-import {GlobalStateContext, SettingsSetterContext} from './contexts.jsx';
+import {GlobalStateContext, NeedsListContext, PlanLoaderContext, SettingsSetterContext} from './contexts.jsx';
 import {ItemIcon} from './icon.jsx';
 import {ItemSelect} from './item_select.jsx';
 import {Button} from './components/ui/button';
@@ -9,6 +9,7 @@ import {Label} from './components/ui/label';
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from './components/ui/dialog';
 import {SavedPresets} from './components/saved-presets.jsx';
 import {createProductionSource, isItemRequired} from './production_sources.js';
+import {createNeedsPlanSnapshot} from './lib/plan-state.js';
 
 function isPositiveNumber(value) {
     return String(value).trim() !== '' && Number.isFinite(Number(value)) && Number(value) > 0;
@@ -74,7 +75,8 @@ export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_s
     function add_npl(item) {
         // An explicitly added unrelated line is an independent existing plant.
         // A split of a required intermediate follows that demand plan instead.
-        const source = createProductionSource(global_state, item, {standalone: !isItemRequired(global_state, needs_list, item)});
+        const standalone = !isItemRequired(global_state, needs_list, item);
+        const source = {...createProductionSource(global_state, item, {standalone}), scope: standalone ? 'global' : 'plan'};
         set_settings(previous => ({production_sources: [...(previous.production_sources || []), source]}));
         setSourceStatus(`已为${item}添加产量为 0 的来源，请在生产总览的同物品分组中设置。`);
         setLastSourceItem(item);
@@ -127,7 +129,7 @@ export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_s
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle>清空当前需求？</DialogTitle>
-                    <DialogDescription>将移除当前的 {entries.length} 项生产目标。已保存的需求列表和现有产线不会被删除。</DialogDescription>
+                    <DialogDescription>将移除当前的 {entries.length} 项生产目标和绑定的配方分叉。已保存的需求列表与独立现有产线会保留。</DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => setClearOpen(false)}>取消</Button>
@@ -138,10 +140,15 @@ export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_s
     </section>;
 }
 
-export function NeedsListStorage({needs_list, set_needs_list}) {
+export function NeedsListStorage() {
     const global_state = useContext(GlobalStateContext);
+    const needs_list = useContext(NeedsListContext);
+    const load_plan = useContext(PlanLoaderContext);
     const game_name = global_state.game_data.game_name;
 
     return <SavedPresets key={game_name} storageKey="needs_list" scope={game_name}
-                         label="需求列表" noun="需求列表" value={needs_list} onLoad={set_needs_list}/>;
+                         label="需求列表" noun="需求列表"
+                         saveDescription="保存当前目标、生产策略、计算设置和产线分配。加载时一起恢复，仅用于当前游戏版本。"
+                         value={createNeedsPlanSnapshot(needs_list, global_state.scheme_data, global_state.settings, game_name)}
+                         onLoad={saved => load_plan(saved, 'needs')}/>;
 }

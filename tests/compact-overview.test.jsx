@@ -166,12 +166,12 @@ describe('compact production overview', () => {
     });
 
     it('retains 30px migrated-source factory icons and 32px desktop selectors inside the product group', () => {
-        localStorage.setItem('auto_settings', JSON.stringify({natural_production_line: [{'目标物品': '铁块', '建筑数量': 10, '配方id': 1, '增产点数': 0, '增产模式': 0, '建筑': 0}]}));
+        localStorage.setItem('auto_settings', JSON.stringify({natural_production_line: [{'目标物品': '铁块', '建筑数量': 10, '配方id': 1, '增产点数': 0, '增产模式': 0, '建筑': 0, standalone: true}]}));
         render(<Overview mode="full" initialNeeds={{'铁块': 600}}/>);
         const group = screen.getByRole('region', {name: '铁块生产来源'});
-        const card = within(group).getByRole('article', {name: '铁块手动产线 1'});
-        expect(within(card).getByRole('textbox', {name: '铁块手动产线 1分配产量'})).toHaveValue('600.00');
-        const factory = within(card).getByLabelText('铁块手动产线 1工厂数量');
+        const card = within(group).getByRole('article', {name: '铁块现有产线 1'});
+        expect(within(card).getByRole('textbox', {name: '铁块现有产线 1分配产量'})).toHaveValue('600.00');
+        const factory = within(card).getByLabelText('铁块现有产线 1工厂数量');
         expect(factory).toHaveTextContent('10.00');
         expect(factory.parentElement.querySelector('[role="img"]')).toHaveStyle({width: '30px', height: '30px'});
         expect(within(card).getByRole('button', {name: '位面熔炉'}).querySelector('[role="img"]')).toHaveStyle({width: '32px', height: '32px'});
