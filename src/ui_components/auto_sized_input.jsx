@@ -17,7 +17,7 @@ export const AutoSizedInput = ({value, onChange, className, delayed, 'aria-label
     return <Input {...props}
         aria-label={ariaLabel}
         aria-invalid={invalid || undefined}
-        className={cn('dsp-number-input h-6 min-w-11 rounded-sm px-1 text-right text-xs tabular-nums shadow-none', invalid && 'border-destructive focus-visible:ring-destructive/30', className)}
+        className={cn('dsp-number-input h-8 min-w-14 rounded-md px-1 text-right text-base md:text-base tabular-nums shadow-none', invalid && 'border-destructive focus-visible:ring-destructive/30', className)}
         style={{width: `${Math.max(String(displayedValue ?? '').length + 2, 6)}ch`, ...props.style}}
         type="text" inputMode="decimal"
         value={displayedValue}

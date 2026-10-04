@@ -5,6 +5,8 @@ import {cleanup, render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {CompactModeContext, ContextProvider} from '../src/contexts.jsx';
 import {Result} from '../src/result.jsx';
+import {describeRecipe, Recipe} from '../src/recipe.jsx';
+import {default_game_data} from '../src/GameData.jsx';
 import {TooltipProvider} from '../src/components/ui/tooltip';
 
 beforeEach(() => {
@@ -17,8 +19,8 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-function Overview({mode}) {
-    const [needs, setNeeds] = useState({'铁块': 60});
+function Overview({mode, initialNeeds = {'铁块': 60}}) {
+    const [needs, setNeeds] = useState(initialNeeds);
     const [oreOpen, setOreOpen] = useState(false);
     const [buildingOpen, setBuildingOpen] = useState(false);
     return <TooltipProvider><ContextProvider><CompactModeContext.Provider value={mode}>
@@ -29,30 +31,38 @@ function Overview({mode}) {
 }
 
 describe('compact production overview', () => {
-    it('uses a laptop sidebar, bounded independent scrolling and dense table controls', () => {
+    it('uses content-sized columns and an adjacent bounded sidebar without stretching or reducing row height', () => {
         const {container} = render(<Overview mode="compact"/>);
         const result = screen.getByRole('region', {name: '生产总览'});
-        expect(result).toHaveAttribute('data-density', 'compact');
+        expect(result).toHaveAttribute('data-density', 'comfortable');
         // These are the responsive layout contract; pixel layout is checked in-browser.
-        expect(container.querySelector('.dsp-result-layout')).toHaveClass('lg:grid-cols-[minmax(0,1fr)_216px]', 'xl:grid-cols-[minmax(0,1fr)_240px]');
+        expect(result).toHaveClass('w-fit', 'max-w-full');
+        expect(container.querySelector('.dsp-result-layout')).toHaveClass('flex', 'max-w-full');
+        expect(container.querySelector('.dsp-result-layout').className).not.toContain('1fr');
+        expect(container.querySelector('.dsp-result-table-card')).toHaveClass('w-fit', 'min-w-0', 'max-w-full', 'flex-[0_1_auto]');
+        expect(container.querySelector('.dsp-production-table')).toHaveClass('w-auto');
+        expect(container.querySelector('.dsp-production-table')).not.toHaveClass('w-full');
         const summary = screen.getByRole('complementary', {name: '生产统计'});
-        expect(summary).toHaveClass('hidden', 'lg:grid', 'max-h-[70dvh]', 'overflow-y-auto');
+        expect(summary).toHaveClass('hidden', 'lg:grid', 'w-max', 'max-w-80', 'shrink-0', 'max-h-[70dvh]', 'overflow-y-auto');
         expect(within(summary).getByText('预估电力')).toBeInTheDocument();
         expect(within(summary).getByText('原矿输入总需求')).toBeInTheDocument();
         expect(within(summary).getByText('建筑统计')).toBeInTheDocument();
         const scroll = screen.getByRole('region', {name: '生产结果表，可横向滚动'});
         expect(scroll).toHaveAttribute('tabindex', '0');
-        expect(scroll).toHaveClass('overflow-auto', 'max-h-[70dvh]');
+        expect(scroll).toHaveClass('overflow-auto', 'max-h-[70dvh]', 'max-w-full');
+        expect(scroll).not.toHaveClass('w-full');
         expect(scroll.querySelector('thead')).toHaveClass('sticky', 'top-0');
         const amount = screen.getByRole('textbox', {name: '铁块产能，等比例调整需求'});
         expect(amount).toHaveValue('60.00');
-        expect(amount).toHaveClass('h-6', 'px-1');
+        expect(amount).toHaveClass('h-8', 'px-1', 'text-base', 'md:text-base');
+        expect(container.querySelector('.dsp-production-table')).toHaveClass('text-base');
+        expect(result).toHaveClass('space-y-4');
         const row = amount.closest('tr');
         expect(row.querySelector('.dsp-item-name')).toHaveClass('sr-only');
         expect(row.querySelector('.dsp-item-name')).toHaveTextContent('铁块');
         expect(within(row).getAllByRole('cell')).toHaveLength(8);
-        for (const cell of within(row).getAllByRole('cell')) expect(cell).toHaveClass('px-1.5', 'py-1');
-        expect(within(row).getByRole('button', {name: '位面熔炉'})).toHaveClass('min-h-6', 'min-w-6');
+        for (const cell of within(row).getAllByRole('cell')) expect(cell).toHaveClass('px-1.5', 'py-3');
+        expect(within(row).getByRole('button', {name: '位面熔炉'})).toHaveClass('min-h-8', 'min-w-7', 'py-1');
     });
 
     it('retains visible item names and complete recipe details in the wide layout', () => {
@@ -65,6 +75,50 @@ describe('compact production overview', () => {
         expect(recipe).toBeInTheDocument();
         expect(recipe.getAttribute('title')).toContain('1s');
         expect(screen.getByRole('columnheader', {name: '工厂类型'})).toBeInTheDocument();
+    });
+
+    it('lets simple compact recipes use only their content width while retaining full accessible details', () => {
+        const {container} = render(<Overview mode="compact"/>);
+        const recipe = container.querySelector('.dsp-compact-recipe[title*="铁矿 × 1 → 铁块 × 1"]');
+        expect(recipe).toHaveClass('w-max', 'max-w-32');
+        expect(recipe).not.toHaveClass('w-28');
+        expect(recipe).toHaveAccessibleName('铁矿 × 1 → 铁块 × 1 · 1s');
+        expect(screen.getByRole('button', {name: '铁块配方 1'})).toHaveAccessibleDescription('铁矿 × 1 → 铁块 × 1 · 1s');
+    });
+
+    it('bounds real multi-input recipes and keeps each icon with its quantity when wrapping', () => {
+        const recipe = default_game_data.recipe_data.find(entry => Object.keys(entry['原料']).length >= 4);
+        expect(recipe).toBeDefined();
+        const {container} = render(<TooltipProvider><ContextProvider><Recipe recipe={recipe} compact="full"/></ContextProvider></TooltipProvider>);
+        const display = container.querySelector('.dsp-full-recipe');
+        expect(display).toHaveClass('max-w-72', 'flex-wrap');
+        expect(display).toHaveAccessibleName(describeRecipe(recipe));
+        expect(display).toHaveAttribute('title', describeRecipe(recipe));
+        const entries = [...Object.entries(recipe['原料']), ...Object.entries(recipe['产物'])];
+        const groups = display.querySelectorAll('.dsp-recipe-ingredient');
+        expect(groups).toHaveLength(entries.length);
+        groups.forEach((group, index) => {
+            expect(group).toHaveClass('inline-flex', 'shrink-0');
+            expect(group.querySelector('[role="img"]')).toBeInTheDocument();
+            expect(group).toHaveTextContent(String(entries[index][1]));
+        });
+    });
+
+    it('keeps a complex quantum-chip production chain content-sized with all eight controls columns', () => {
+        const {container} = render(<Overview mode="compact" initialNeeds={{'量子芯片': 60}}/>);
+        const table = container.querySelector('.dsp-production-table');
+        expect(table).toHaveClass('w-auto');
+        expect(within(table).getAllByRole('row').length).toBeGreaterThan(20);
+        expect(within(table).getAllByRole('columnheader')).toHaveLength(8);
+        expect(screen.getByRole('textbox', {name: '量子芯片产能，等比例调整需求'})).toHaveValue('60.00');
+        expect(container.querySelector('.dsp-result-summary')).toHaveClass('max-w-80');
+        for (const row of table.querySelectorAll('tbody > tr')) {
+            expect(within(row).getAllByRole('cell')).toHaveLength(8);
+        }
+        for (const recipe of container.querySelectorAll('.dsp-compact-recipe')) {
+            expect(recipe).toHaveClass('w-max', 'max-w-32');
+            expect(recipe).toHaveAccessibleName(recipe.getAttribute('title'));
+        }
     });
 
     it('keeps mobile quantities editable and all summaries reachable in dismissible dialogs', async () => {
