@@ -3,6 +3,8 @@ import {GameInfo, GlobalState} from './global_state';
 import {init_scheme_data} from './scheme_data';
 import {default_game_data, get_game_data, get_mod_options, MoreMegaStructureGUID, TheyComeFromVoidGUID} from "./GameData.jsx";
 import {getStorageSnapshot, readStorageObject} from "./lib/storage.js";
+import {migrateLegacyProductionSources} from './production_sources.js';
+import {normalizeSourceIds} from './lib/source-storage.js';
 
 
 /** set_game_name_and_data(game_name, game_data) */
@@ -45,7 +47,8 @@ const DEFAULT_SETTINGS = {
     blue_buff: false,
 
     mineralize_list: {},
-    natural_production_line: []
+    natural_production_line: [],
+    production_sources: []
 };
 export const DefaultSettingsContext = createContext(DEFAULT_SETTINGS);
 
@@ -97,6 +100,22 @@ export function ContextProvider({children}) {
         // 清理 delete arr[i] 导致的 null 空洞
         if (Array.isArray(merged.natural_production_line)) {
             merged.natural_production_line = merged.natural_production_line.filter(e => e != null);
+        }
+        if (!Array.isArray(merged.production_sources)) {
+            merged.production_sources_backup = structuredClone(merged.production_sources);
+            merged.production_sources = [{target_item: '', output_per_minute: 0, migration_error: '保存的来源列表格式不正确，原始内容已保留在备份中'}];
+        }
+        merged.production_sources = normalizeSourceIds(merged.production_sources);
+        // Older saves describe fixed building counts. Convert them once to fixed
+        // per-minute source allocations, keeping the original records recoverable.
+        if (merged.natural_production_line?.length) {
+            const state = new GlobalState(game_info, scheme_data, merged);
+            const migrated = migrateLegacyProductionSources(state, merged.natural_production_line);
+            const existing = Array.isArray(merged.production_sources) ? merged.production_sources : [];
+            const ids = new Set(existing.map(source => source?.id));
+            merged.production_sources = normalizeSourceIds([...existing, ...migrated.filter(source => !ids.has(source.id))]);
+            merged.natural_production_line_backup = structuredClone(merged.natural_production_line);
+            merged.natural_production_line = [];
         }
         return merged;
     });

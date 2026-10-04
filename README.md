@@ -2,7 +2,19 @@
 
 A production-chain calculator for Dyson Sphere Program (戴森球计划量化计算器), with a React 19 interface built from checked-in shadcn/ui components, Radix primitives and Tailwind CSS.
 
-The refactor preserves the existing game data, recipe choices, linear-programming solver, proliferation settings, mod combinations and production calculations. The interface provides searchable item selection, responsive results, light/dark themes, settings, existing production lines, and named demand/production presets.
+The refactor preserves the existing game data, recipe choices, proliferation settings and mod combinations. Plans without independent sources retain the original calculation path; multi-source plans use explicit material balances with the same game recipes. The interface provides searchable item selection, responsive results, light/dark themes, settings, grouped production sources, and named demand/production presets.
+
+## 同一物品的多来源产线
+
+1. 添加生产目标，例如 **引力矩阵 60 / min**。
+2. 选择 **添加现有产线 → 重氢**。新来源从 **0** 开始，保留原来的自动产线；重氢组仍位于原来的中间产物位置。
+3. 组标题显示 **总需求 300 / min**。组内的自动产线与手动产线横向并排，各自显示产量、配方、建筑和增产设置。
+4. 在新来源中选择轨道采集器、分馏或粒子对撞配方，再填写 **150 / min**。自动产线承担剩余 **150 / min**，原料、建筑与电力会一起重新计算。
+5. 用组内 **添加产线** 继续拆分来源。超过需求时会显示多余产物；不会生成负的自动产量，也不会擅自平均分配各条产线。副产物供给单独列出。
+
+分配数值表示可用于满足需求的**净产量**，循环配方内部重复使用的物品不会重复计入。每条手动产线有独立身份和设置；删除后由自动产线重新平衡。更多来源可在组内横向滚动。
+
+来源分配自动保存在当前浏览器，**保存生产策略**也会保存这些来源。加载旧策略时，未包含来源的策略按无手动来源处理。旧的“自然产线”按保存的建筑数量和配置折算为每分钟产量，并保留原始记录备份。固定分配以每分钟储存，切换显示单位只换算其显示数值；现有目标产量输入的单位行为保持不变。
 
 ## Local development
 
@@ -33,7 +45,11 @@ The fixture is deliberately independent of the current UI and solver. If an inte
 
 ### Verification notes
 
-The refactor has numerical and DOM interaction tests, lint/typechecking, and verified production builds for both `/` and `/dsp-calc/`. The public deployment has been smoke-tested in a desktop browser for item search, production calculations, bulk building selection, themes and the PWA update flow. The item picker uses the original compact icon-grid placement; the overview uses dense rows and a desktop summary sidebar. Mobile styles have regression coverage, but a real mobile viewport visual check is still recommended; DOM tests do not replace visual review.
+The refactor has numerical and DOM interaction tests, lint/typechecking, and verified production builds for both `/` and `/dsp-calc/`. The public deployment has been smoke-tested in a desktop browser for item search, production calculations, bulk building selection, themes and the PWA update flow. The item picker uses the original compact icon-grid placement; the overview uses content-sized columns, readable original-scale type/icons, comfortable row spacing and a desktop summary sidebar. Mobile styles have regression coverage, but a real mobile viewport visual check is still recommended; DOM tests do not replace visual review.
+
+Multi-source regressions cover the gravity-matrix/deuterium example, independent source configuration, zero/full/excess allocations, removal, physical rate units, coproducts and self-recycling, numerical conservation, grouped DOM ordering, source identities and saved-data migration. The original numerical fixture remains unchanged.
+
+For independent sources, fixed material flows are applied to the original planner first and the resulting balance is checked. A full balance solve is used when that plan cannot satisfy the actual flows, or when explicit surplus-avoidance costs require a complete objective. Ordinary splits therefore retain the existing automatic plan rather than opportunistically changing unrelated recipes. Shared power accounting also keeps hidden mines in totals and excludes mineralized external supply; blue-buff recipe changes are isolated from the saved game data.
 
 Before release, open the preview on desktop and mobile widths; check item search, recipe/factory/proliferation controls, keyboard navigation and dialog focus, cancel/confirm flows, saved presets after reload, mod switching, light/dark themes, and the installed PWA update prompt.
 
@@ -76,7 +92,7 @@ The Pages workflow listens for branch pushes and checks the repository's current
 ## UI and saved-data compatibility
 
 - Shared shadcn/ui components live in `src/components/ui/`; `components.json` records their configuration. App styling uses semantic Tailwind theme tokens rather than Bootstrap or Ant Design.
-- Calculation logic remains in `src/global_state.jsx`, with the existing data conversion in `src/GameData.jsx` and recipe initialization in `src/scheme_data.jsx`.
+- Original calculation logic remains in `src/global_state.jsx`; independent-source balances and per-source quantities live in `src/production_sources.js`. Data conversion remains in `src/GameData.jsx` and recipe initialization in `src/scheme_data.jsx`.
 - Existing local-storage keys and game-scoped save formats are preserved: `scheme_data`, `needs_list`, `auto_scheme`, `auto_settings`, `auto_mods` and `theme`.
 - Saves remain local to the current browser and origin. A fork's Pages URL has a different origin from the upstream domain, so it cannot automatically read saves stored on the upstream site. Save compatibility does not transfer browser storage between domains.
 - Mod changes remain explicit because they can reset the current demand/production setup. PWA updates remain user-prompted.

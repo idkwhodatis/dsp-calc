@@ -8,6 +8,7 @@ import {Input} from './components/ui/input';
 import {Label} from './components/ui/label';
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from './components/ui/dialog';
 import {SavedPresets} from './components/saved-presets.jsx';
+import {createProductionSource} from './production_sources.js';
 
 function isPositiveNumber(value) {
     return String(value).trim() !== '' && Number.isFinite(Number(value)) && Number(value) > 0;
@@ -48,6 +49,8 @@ export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_s
     const set_settings = useContext(SettingsSetterContext);
     const [count, setCount] = useState('60');
     const [error, setError] = useState('');
+    const [sourceStatus, setSourceStatus] = useState('');
+    const [lastSourceItem, setLastSourceItem] = useState('');
     const [clearOpen, setClearOpen] = useState(false);
     const countId = useId();
     const unit = global_state.settings.is_time_unit_minute ? '/ min' : '/ sec';
@@ -69,15 +72,10 @@ export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_s
     }
 
     function add_npl(item) {
-        if (!validCount) {
-            setError('请输入大于 0 的有限产量。');
-            return false;
-        }
-        const lines = (global_state.settings.natural_production_line || []).filter(Boolean);
-        set_settings({natural_production_line: [...lines, {
-            '目标物品': item, '目标产量': Number(count), '建筑数量': 10,
-            '配方id': 1, '增产点数': 0, '增产模式': 0, '建筑': 0,
-        }]});
+        const source = createProductionSource(global_state, item);
+        set_settings(previous => ({production_sources: [...(previous.production_sources || []), source]}));
+        setSourceStatus(`已为${item}添加产量为 0 的来源，请在生产总览的同物品分组中设置。`);
+        setLastSourceItem(item);
         setError('');
     }
 
@@ -99,7 +97,7 @@ export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_s
                 </div>
             </div>
             <ItemSelect text="添加需求物品" set_item={add_need} disabled={!validCount} icon={<Plus className="size-4" aria-hidden="true"/>}/>
-            <ItemSelect text="添加现有产线" set_item={add_npl} variant="outline" disabled={!validCount}
+            <ItemSelect text="添加现有产线" set_item={add_npl} variant="outline"
                         icon={<PlusSquare className="size-4" aria-hidden="true"/>}/>
             <div className="ml-auto flex items-center gap-1">
                 {set_show_ore_popup && <Button variant="outline" size="icon" className="xl:hidden" aria-label="查看原矿化列表与多余产物"
@@ -112,6 +110,7 @@ export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_s
         </div>
         {!validCount && <p id={`${countId}-error`} role="alert" className="text-xs text-destructive">请输入大于 0 的有效产量后选择物品。</p>}
         {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+        {sourceStatus && <p role="status" className="text-sm text-muted-foreground">{sourceStatus} <a className="underline underline-offset-4 hover:text-foreground" href={`#production-sources-${encodeURIComponent(lastSourceItem)}`}>查看产线</a></p>}
         {entries.length ? <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {entries.map(([item, amount]) => <NeedRow key={item} item={item} count={amount} unit={unit}
                 onChange={next => set_needs_list({...needs_list, [item]: next})} onRemove={() => remove(item)}/>)}

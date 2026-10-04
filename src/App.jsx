@@ -40,7 +40,7 @@ function GameVersion({onChange}) {
         onChange();
         // Existing recipe ids and mineralizations belong to the previous dataset.
         set_settings({
-            natural_production_line: [], mineralize_list: {},
+            natural_production_line: [], production_sources: [], mineralize_list: {},
             mining_speed_oil: 3, mining_speed_hydrogen: 1,
             mining_speed_deuterium: data.GenesisBookEnable ? 0.05 : 0.2,
             mining_speed_gas_hydrate: data.GenesisBookEnable ? 0.8 : 0.5,

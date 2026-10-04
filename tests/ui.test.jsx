@@ -106,7 +106,7 @@ describe('calculator UI interactions', () => {
         expect(screen.getByRole('alert')).toHaveTextContent('大于 0');
         await user.type(quantity, '-1');
         expect(quantity).toHaveAttribute('aria-invalid', 'true');
-        expect(screen.getByRole('button', {name: '添加现有产线'})).toBeDisabled();
+        expect(screen.getByRole('button', {name: '添加现有产线'})).toBeEnabled();
         await user.clear(quantity);
         await user.type(quantity, '0');
         expect(screen.getByRole('button', {name: '添加需求物品'})).toBeDisabled();
@@ -187,16 +187,20 @@ describe('calculator UI interactions', () => {
         }
     });
 
-    it('adds an existing production line, edits its building count and removes it', async () => {
+    it('adds a zero-allocation production source, edits its output and removes it', async () => {
         const {user} = renderApp();
         await addTarget(user, '铁块', '铁块', false, '添加现有产线');
-        expect(screen.getByText('自然产线')).toBeInTheDocument();
-        const buildings = screen.getByRole('textbox', {name: '铁块自然产线建筑数量'});
-        await user.clear(buildings);
-        await user.type(buildings, '3');
-        expect(readStore('auto_settings').natural_production_line[0]['建筑数量']).toBe(3);
-        await user.click(screen.getByRole('button', {name: '删除铁块自然产线'}));
-        expect(readStore('auto_settings').natural_production_line).toEqual([]);
+        expect(screen.getByRole('region', {name: '铁块生产来源'})).toBeInTheDocument();
+        const output = screen.getByRole('textbox', {name: '铁块手动产线 1分配产量'});
+        expect(output).toHaveValue('0.00');
+        expect(readStore('auto_settings').production_sources[0].output_per_minute).toBe(0);
+        await user.clear(output);
+        await user.type(output, '180');
+        await user.keyboard('{Enter}');
+        expect(readStore('auto_settings').production_sources[0].output_per_minute).toBe(180);
+        expect(screen.getByLabelText('铁块手动产线 1工厂数量')).toHaveTextContent('3.00');
+        await user.click(screen.getByRole('button', {name: '删除铁块手动产线 1'}));
+        expect(readStore('auto_settings').production_sources).toEqual([]);
         expect(screen.getByText('开始规划你的生产线')).toBeInTheDocument();
     });
 

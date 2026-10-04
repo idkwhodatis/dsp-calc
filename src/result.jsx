@@ -1,7 +1,8 @@
 import {useContext, useMemo, useState, useEffect} from 'react';
 import {CompactModeContext, GlobalStateContext, SchemeDataSetterContext, SettingsSetterContext} from './contexts';
 import {ItemIcon} from './icon';
-import {NplRows} from './natural_production_line';
+import {ProductionSourceCard, ProductionSourceGroup} from './natural_production_line';
+import {createProductionSource, fromDisplayRate, getProductionEnergy, isMiningBuilding} from './production_sources.js';
 import {describeRecipe, HorizontalMultiButtonSelect, Recipe} from './recipe';
 import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
 import {Button} from './components/ui/button';
@@ -190,14 +191,14 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     let scheme_data = global_state.scheme_data;
     let settings = global_state.settings;
     let item_data = global_state.item_data;
+    const has_item = item => Object.hasOwn(item_data, item);
     let item_graph = global_state.item_graph;
     let time_tick = settings.is_time_unit_minute ? 60 : 1;
 
     // TODO refactor to a simple list
     let mineralize_list = settings.mineralize_list;
-    let natural_production_line = settings.natural_production_line;
 
-    const [result_dict, lp_surplus_list] = useMemo(() => {
+    const [result_dict, lp_surplus_list, source_details] = useMemo(() => {
         const res = global_state.calculate(needs_list);
         return res;
     }, [global_state, needs_list]);
@@ -225,31 +226,9 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                 building_list[factory_name] = Math.ceil(build_number - 0.5 * 0.1 ** fixed_num);
             }
         }
-        if (factory_name !== "轨道采集器") {
-            let e_cost = (build_number - offset) * factory_info["耗能"];
-            if (factory_name === "大型采矿机") {
-                e_cost = settings.mining_efficiency_large / 100.0 * settings.mining_efficiency_large / 100.0 * (2.94 - 0.168) + 0.168;
-            } else if (factory_name.endsWith("分馏塔")) {
-                if (game_data.mods.GenesisBookEnable) {
-                    if (settings.fractionating_speed > 60) {
-                        e_cost *= (settings.fractionating_speed * 0.036 - 0.72) / 1.44;
-                    }
-                } else {
-                    if (settings.fractionating_speed > 30) {
-                        e_cost *= (settings.fractionating_speed * 0.036 - 0.36) / 0.72;
-                    }
-                }
-            }
-            if (scheme_recipe["增产模式"] != 0 && scheme_recipe["增产点数"] != 0) {
-                e_cost *= game_data.proliferator_effect[scheme_recipe["增产点数"]]["耗电倍率"];
-            }
-            if (factory_name === "采矿机" || factory_name === "大型采矿机"
-                || factory_name === "抽水机" || factory_name === "聚束液体汲取设施" || factory_name === "原油萃取站") {
-                miner_energy_cost += e_cost;
-            } else {
-                energy_cost += e_cost;
-            }
-        }
+        const e_cost = getProductionEnergy(global_state, factory_info, scheme_recipe, Math.max(0, build_number - offset));
+        if (isMiningBuilding(factory_name)) miner_energy_cost += e_cost;
+        else energy_cost += e_cost;
         return build_number;
     }
 
@@ -265,11 +244,20 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     // Dict<item, Dict<from, quantity>>
     let side_products = {};
     Object.entries(result_dict).forEach(([item, item_count]) => {
-        Object.entries(item_graph[item]["副产物"]).forEach(([side_product, amount]) => {
+        const byproducts = source_details?.automatic?.[item]?.byproducts;
+        const products = byproducts || Object.fromEntries(Object.entries(item_graph[item]["副产物"]).map(([product, amount]) => [product, item_count * amount]));
+        Object.entries(products).forEach(([side_product, amount]) => {
             side_products[side_product] = side_products[side_product] || {};
-            side_products[side_product][item] = item_count * amount;
+            side_products[side_product][item] = amount;
         });
-    })
+    });
+
+    for (const source of source_details?.sources || []) {
+        for (const [item, amount] of Object.entries(source.byproducts || {})) {
+            side_products[item] = side_products[item] || {};
+            side_products[item][source.target_item] = (side_products[item][source.target_item] || 0) + amount;
+        }
+    }
 
     function mineralize(item) {
         let new_mineralize_list = structuredClone(mineralize_list);
@@ -302,22 +290,44 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         </Button>
     ));
 
+    const production_sources = source_details?.sources || [];
+    const source_groups = source_details?.groups || {};
+    const ordered_items = [...new Set([...(source_details?.order || Object.keys(result_dict)), ...Object.keys(source_groups)])];
+
+    function add_source(item) {
+        const source = createProductionSource(global_state, item);
+        set_settings(previous => ({production_sources: [...(previous.production_sources || []), source]}));
+    }
+
+    function update_source(id, patch) {
+        set_settings(previous => ({production_sources: (previous.production_sources || []).map(source => source.id === id ? {...source, ...patch, migration_error: undefined} : source)}));
+    }
+
+    function remove_source(id) {
+        set_settings(previous => ({production_sources: (previous.production_sources || []).filter(source => source.id !== id)}));
+    }
+
     let result_table_rows = [];
-    for (let i in result_dict) {
+    for (const i of ordered_items) {
+        if (!has_item(i)) continue;
         side_products[i] = side_products[i] || {};
-        let total = result_dict[i] + Object.values(side_products[i]).reduce((a, b) => a + b, 0);
-        if (total < 1e-6) continue;
+        const item_sources = production_sources.filter(source => source.target_item === i);
+        const automatic_amount = Math.max(0, result_dict[i] || 0);
+        let total = automatic_amount + Object.values(side_products[i]).reduce((a, b) => a + b, 0);
+        if (total < 1e-6 && item_sources.length === 0) continue;
         let recipe_id = item_data[i][scheme_data.item_recipe_choices[i]];
-        if (settings.hide_mines && ((i in mineralize_list) || Object.keys(game_data.recipe_data[recipe_id]["原料"]).length < 1)) {
+        const is_mineralized = i in mineralize_list;
+        // External supply has no local factories. Hiding a mining row is only a
+        // display preference and must not remove its buildings or grid demand.
+        let factory_number = is_mineralized ? 0 : source_details?.automatic?.[i]?.buildings ?? get_factory_number(automatic_amount, i);
+        if (item_sources.length === 0 && settings.hide_mines && (is_mineralized || Object.keys(game_data.recipe_data[recipe_id]["原料"]).length < 1)) {
             continue;
         }
-        let factory_number = get_factory_number(result_dict[i], i);
         let from_side_products = Object.entries(side_products[i]).map(([from, amount]) =>
             <div key={from} className="mt-1 flex items-center justify-end gap-0.5 whitespace-nowrap text-sm text-muted-foreground">+{amount.toFixed(fixed_num)} (<ItemIcon item={from} size={is_mobile ? 18 : 26}/>)
             </div>
         );
         let factory_name = game_data.factory_data[game_data.recipe_data[recipe_id]["设施"]][scheme_data.scheme_for_recipe[recipe_id]["建筑"]]["名称"];
-        let is_mineralized = i in mineralize_list;
         let row_class = is_mineralized ? "bg-muted/60" : "";
 
         const change_recipe = (value) => {
@@ -353,7 +363,42 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         };
 
         const ratioProps = {fixed_num, needs_list, set_needs_list};
-        result_table_rows.push(<tr className={cn("border-b last:border-0 transition-colors hover:bg-muted/40", row_class)} key={i}>
+        if (item_sources.length > 0) {
+            const group = source_groups[i];
+            const automatic_scheme = scheme_data.scheme_for_recipe[recipe_id];
+            const mineralizeControl = <Button type="button" variant="ghost" size="sm" className="h-8 px-1 text-base text-muted-foreground"
+                aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
+                onClick={() => is_mineralized ? unmineralize(i) : mineralize(i)}>{is_mineralized ? '恢复' : '原矿化'}</Button>;
+            result_table_rows.push(<tr key={i} data-product={i} className={cn('dsp-source-group-row border-b last:border-0', row_class)}>
+                <td colSpan={8} className="px-2 py-3">
+                    <ProductionSourceGroup item={i} group={group} onAdd={() => add_source(i)} mineralizeControl={mineralizeControl}
+                        totalControl={<output aria-label={`${i}总需求`} className="text-base font-semibold tabular-nums">{group.required.toFixed(fixed_num)}</output>}>
+                        <ProductionSourceCard item={i} automatic output={group.automatic} buildings={factory_number} factory_name={factory_name}
+                            recipe_id={recipe_id} recipe_choice={scheme_data.item_recipe_choices[i]} building={automatic_scheme['建筑']}
+                            proliferator_mode={automatic_scheme['增产模式']} proliferator_points={automatic_scheme['增产点数']}
+                            onRecipeChange={change_recipe} onFactoryChange={change_factory} onModeChange={change_pro_mode} onPointsChange={change_pro_num}
+                            is_mineralized={is_mineralized}/>
+                        {item_sources.map((source, index) => <ProductionSourceCard key={source.id} item={i} source={source} ordinal={index + 1}
+                            output={source.output} buildings={source.buildings} factory_name={source.factory_name}
+                            recipe_id={source.recipe_id} recipe_choice={source.recipe_choice} building={source.building}
+                            proliferator_mode={source.proliferator_mode} proliferator_points={source.proliferator_points}
+                            onOutputChange={value => update_source(source.id, {output_per_minute: fromDisplayRate(Number(value), settings)})}
+                            onRecipeChange={value => {
+                                const recipe = game_data.recipe_data[item_data[i][Number(value)]];
+                                const mode = source.proliferator_mode;
+                                const compatible_mode = mode > 0 && (recipe['增产'] & (1 << (mode - 1))) ? mode : recipe['增产'] === 8 ? 4 : 0;
+                                update_source(source.id, {recipe_choice: Number(value), building: 0, proliferator_mode: compatible_mode, migration_error: undefined});
+                            }}
+                            onFactoryChange={value => update_source(source.id, {building: Number(value)})}
+                            onModeChange={value => update_source(source.id, {proliferator_mode: Number(value)})}
+                            onPointsChange={value => update_source(source.id, {proliferator_points: Number(value)})}
+                            onRemove={() => remove_source(source.id)}/>)}
+                    </ProductionSourceGroup>
+                </td>
+            </tr>);
+            continue;
+        }
+        result_table_rows.push(<tr className={cn("border-b last:border-0 transition-colors hover:bg-muted/40", row_class)} key={i} data-product={i}>
             <td className="px-2 py-3">
                 <Button type="button" variant="ghost" size="sm" className="h-7 whitespace-nowrap px-1 text-sm text-muted-foreground"
                     aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
@@ -368,7 +413,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                 </div>
             </td>
             <td className="px-2 py-3 text-right">
-                <RatioAdjustInput value={get_gross_output(result_dict[i], i)} {...ratioProps} label={`${i}产能，等比例调整需求`}/>
+                <RatioAdjustInput value={source_details?.automatic?.[i]?.gross_output ?? get_gross_output(automatic_amount, i)} {...ratioProps} label={`${i}产能，等比例调整需求`}/>
                 {from_side_products}
             </td>
             <td className="px-2 py-3 whitespace-nowrap">
@@ -384,27 +429,11 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         </tr>);
     }
 
-    for (let NPId in natural_production_line) {
-        let recipe = game_data.recipe_data[item_data[natural_production_line[NPId]["目标物品"]][natural_production_line[NPId]["配方id"]]];
-        let factory_info = game_data.factory_data[recipe["设施"]][natural_production_line[NPId]["建筑"]];
-        const factory_name = factory_info["名称"];
-        if (factory_name in building_list) {
-            building_list[factory_name] = Number(building_list[factory_name]) + Math.ceil(natural_production_line[NPId]["建筑数量"]);
-        } else {
-            building_list[factory_name] = Math.ceil(natural_production_line[NPId]["建筑数量"]);
-        }
-        if (factory_name !== "轨道采集器") {
-            let e_cost = natural_production_line[NPId]["建筑数量"] * factory_info["耗能"];
-            if (natural_production_line[NPId]["增产点数"] != 0 && natural_production_line[NPId]["增产模式"] != 0) {
-                e_cost *= game_data.proliferator_effect[natural_production_line[NPId]["增产点数"]]["耗电倍率"];
-            }
-            if (factory_name === "采矿机" || factory_name === "大型采矿机"
-                || factory_name === "抽水机" || factory_name === "聚束液体汲取设施" || factory_name === "原油萃取站") {
-                miner_energy_cost += e_cost;
-            } else {
-                energy_cost += e_cost;
-            }
-        }
+    // The engine includes each independent source exactly once in global totals.
+    if (source_details?.totals) {
+        building_list = source_details.totals.buildingCounts;
+        energy_cost = source_details.totals.energyCost;
+        miner_energy_cost = source_details.totals.totalEnergyCost - energy_cost;
     }
 
     const building_rows = Object.entries(building_list).map(([building, count]) => (
@@ -456,7 +485,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
             rawMaterials: {}
         };
 
-        Object.entries(result_dict).forEach(([item, amount]) => {
+        if (source_details?.totals) currentValues.rawMaterials = {...source_details.totals.rawMaterials};
+        else Object.entries(result_dict).forEach(([item, amount]) => {
             if (isRawMaterial(item)) {
                 currentValues.rawMaterials[item] = amount;
             }
@@ -471,7 +501,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [result_dict, energy_cost, miner_energy_cost, building_list]);
 
-    const rawMaterials = Object.entries(result_dict).filter(([item]) => isRawMaterial(item));
+    const rawMaterials = source_details?.totals ? Object.entries(source_details.totals.rawMaterials) : Object.entries(result_dict).filter(([item]) => isRawMaterial(item));
     const totalBuildings = Object.values(building_list).reduce((sum, count) => sum + count, 0);
     const unit = time_tick === 60 ? 'min' : 's';
     const rawMaterialCard = <Card className="dsp-summary-card gap-0 rounded-lg py-0 shadow-none">
@@ -524,6 +554,11 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                 <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-sm" onClick={() => set_show_building_popup(true)}>建筑与需求</Button>
             </div>
         </div>
+        {(source_details?.errors?.length > 0 || production_sources.some(source => !has_item(source.target_item))) && <div role="alert" className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-base text-destructive">
+            {(source_details.errors || []).map((error, index) => <p key={index}>{typeof error === 'string' ? error : error.message || String(error)}</p>)}
+            {production_sources.filter(source => !has_item(source.target_item)).map(source => <Button key={source.id} type="button" variant="outline" size="sm"
+                className="text-base" aria-label={`删除无效产线${source.target_item}`} onClick={() => remove_source(source.id)}>删除无效产线 {source.target_item}：{source.error}</Button>)}
+        </div>}
         <div className="dsp-result-layout flex max-w-full items-start gap-4">
             <Card className="dsp-result-table-card w-fit min-w-0 max-w-full flex-[0_1_auto] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
                 <p className="border-b bg-muted/20 px-2 py-2 text-sm text-muted-foreground lg:hidden">左右滑动表格，查看配方与生产设置</p>
@@ -538,8 +573,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                                 <th scope="col" className="px-2 py-3 font-medium">增产剂</th><th scope="col" className="px-2 py-3 font-medium">工厂类型</th>
                             </tr>
                         </thead>
-                        <tbody><NplRows/>{result_table_rows}
-                            {result_table_rows.length === 0 && natural_production_line.length === 0 && <tr><td colSpan={8} className="px-4 py-20 text-center">
+                        <tbody>{result_table_rows}
+                            {result_table_rows.length === 0 && <tr><td colSpan={8} className="px-4 py-20 text-center">
                                 <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl border bg-muted/40 text-lg text-muted-foreground" aria-hidden="true">＋</div>
                                 <p className="text-sm font-medium">开始规划你的生产线</p><p className="mt-1.5 text-sm text-muted-foreground">添加目标物品与需求数量，查看完整的生产链与建筑需求</p>
                             </td></tr>}
