@@ -312,6 +312,8 @@ describe('production source settings and storage', () => {
         expect(readStore('auto_settings').production_sources).toEqual(saved.production_sources);
     });
 
+    // Several full 39-row plans, dialogs and a remount exceed the default 5s
+    // on hosted two-core runners. Keep every assertion with a scoped budget.
     it.each(['explicitly bound', 'untagged older'])('pauses an %s saved gravity-matrix allocation on empty reload and restores its 150/150 split with demand', async mode => {
         let {user, unmount} = renderApp();
         await addTarget(user, '引力矩阵');
@@ -365,7 +367,7 @@ describe('production source settings and storage', () => {
         expect(screen.getByRole('article', {name: '重氢手动产线 1'})).toHaveAttribute('data-source-id', allocated[0].id);
         expect(screen.queryByText('已暂停1条未被当前需求使用的来源')).not.toBeInTheDocument();
         expect(readStore('auto_settings').production_sources).toEqual(saved);
-    });
+    }, 15000);
 
     it('keeps canonical source rates and building counts unchanged when switching display units, and converts edits back to per minute', async () => {
         const sources = [source('canonical-rate', {output_per_minute: 90}), source('zero-rate', {output_per_minute: 0})];
