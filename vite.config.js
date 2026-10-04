@@ -202,6 +202,9 @@ export default defineConfig(({mode}) => ({
     },
     test: {
         environment: 'jsdom',
+        // Dense full-plan UI tests render hundreds of controls and exercise
+        // multiple layouts. Hosted runners need a consistent integration budget.
+        testTimeout: 15000,
         setupFiles: ['./tests/setup.js'],
         include: ['tests/**/*.test.{js,jsx,ts,tsx}'],
         clearMocks: true,
