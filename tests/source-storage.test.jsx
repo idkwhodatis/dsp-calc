@@ -121,7 +121,7 @@ describe('production source settings and storage', () => {
         expect(screen.getByRole('article', {name: '重氢现有产线 1'})).toHaveAttribute('data-source-id', saved[0].id);
         expect(readStore('auto_settings').production_sources).toEqual(saved);
         await editOutput(user, 0, '重氢');
-        expect(readStore('auto_settings').production_sources[0]).toEqual({...saved[0], output_per_minute: 0});
+        expect(readStore('auto_settings').production_sources[0]).toEqual({...saved[0], quantity_mode: 'rate', output_per_minute: 0});
     });
 
     it('autosaves independent same-item source edits and preserves zero allocations and identities across settings changes and remounts', async () => {
@@ -236,7 +236,7 @@ describe('production source settings and storage', () => {
         });
         await editOutput(user, 25, '铁块', 2);
         expect(readStore('auto_settings').production_sources).toEqual([
-            repaired[0], {...repaired[1], output_per_minute: 25}, repaired[2],
+            repaired[0], {...repaired[1], quantity_mode: 'rate', output_per_minute: 25}, repaired[2],
         ]);
         unmount();
         ({user} = renderApp());
@@ -353,14 +353,14 @@ describe('production source settings and storage', () => {
         localStorage.setItem('auto_settings', JSON.stringify({production_sources: sources}));
         const {user} = renderApp();
         expect(sourceInput()).toHaveValue('90.00');
-        const buildings = screen.getByLabelText('铁块现有产线 1工厂数量').textContent;
+        const buildings = screen.getByLabelText('铁块现有产线 1工厂数量').value;
         await user.click(screen.getByRole('tab', {name: '每秒'}));
         expect(sourceInput()).toHaveValue('1.50');
         expect(sourceInput('铁块', 2)).toHaveValue('0.00');
-        expect(screen.getByLabelText('铁块现有产线 1工厂数量')).toHaveTextContent(buildings);
+        expect(screen.getByLabelText('铁块现有产线 1工厂数量')).toHaveValue(buildings);
         expect(readStore('auto_settings').production_sources).toEqual(sources);
         await editOutput(user, 2);
-        expect(readStore('auto_settings').production_sources[0]).toEqual({...sources[0], output_per_minute: 120});
+        expect(readStore('auto_settings').production_sources[0]).toEqual({...sources[0], quantity_mode: 'rate', output_per_minute: 120});
         expect(readStore('auto_settings').production_sources[1]).toEqual(sources[1]);
         await user.click(screen.getByRole('tab', {name: '每分钟'}));
         expect(sourceInput()).toHaveValue('120.00');

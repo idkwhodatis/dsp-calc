@@ -172,7 +172,7 @@ describe('compact production overview', () => {
         const card = within(group).getByRole('article', {name: '铁块现有产线 1'});
         expect(within(card).getByRole('textbox', {name: '铁块现有产线 1分配产量'})).toHaveValue('600.00');
         const factory = within(card).getByLabelText('铁块现有产线 1工厂数量');
-        expect(factory).toHaveTextContent('10.00');
+        expect(factory).toHaveValue('10.00');
         expect(factory.parentElement.querySelector('[role="img"]')).toHaveStyle({width: '30px', height: '30px'});
         expect(within(card).getByRole('button', {name: '位面熔炉'}).querySelector('[role="img"]')).toHaveStyle({width: '32px', height: '32px'});
     });

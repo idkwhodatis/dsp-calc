@@ -9,13 +9,14 @@ import {fileURLToPath} from 'url';
 import {defineConfig} from 'vite';
 import legacy from '@vitejs/plugin-legacy';
 import {VitePWA} from 'vite-plugin-pwa';
+import {spriteAssetPaths, spriteSourceHash} from './scripts/sprite-assets.mjs';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Generate a sprite sheet from an array of PNG files using sharp.
  *  Returns {image: Buffer, coordinates: {[file]: {x, y, width, height}}, properties: {width, height}} */
-async function generateSpriteSheet(pngFiles) {
+export async function generateSpriteSheet(pngFiles) {
     // Read all images and get their dimensions
     const imageInfos = await Promise.all(pngFiles.map(async (file) => {
         const meta = await sharp(file).metadata();
@@ -74,9 +75,8 @@ async function generateSpriteSheet(pngFiles) {
     return {image, coordinates, properties: {width: totalWidth, height: totalHeight}};
 }
 
-/** Generate one sprite image per game sub-directory under `icon/`.
- *  In development mode, skip generation if sprite files already exist (so the
- *  dev server starts fast on subsequent runs while still working on first run). */
+/** Generate one content-addressed sprite pair per game directory under `icon/`.
+ *  Development reuses existing sprites only while their source icons match. */
 function get_sprite_plugins(mode) {
     return readdirSync('./icon').map(dir => {
         if (lstatSync(`./icon/${dir}`).isDirectory()) {
@@ -86,18 +86,23 @@ function get_sprite_plugins(mode) {
                 // generate sprite sheet, then compress to png and webp
                 name: `spritesmith_${dir}`,
                 async buildStart() {
-                    // In dev mode, skip if sprite files already exist
-                    if (mode === "development") {
-                        const jsonExists = existsSync(`./icon/${dir}.json`);
-                        const pngExists = existsSync(`./public/icon/${dir}.png`);
-                        if (jsonExists && pngExists) return;
-                        console.log(`[sprite] Generating missing icon atlas for "${dir}"...`);
-                    }
-
                     const pngFiles = readdirSync(`./icon/${dir}`)
                         .filter(f => f.endsWith('.png'))
                         .sort()
                         .map(f => `./icon/${dir}/${f}`);
+                    const sourceHash = await spriteSourceHash(pngFiles);
+                    const manifestPath = `./icon/${dir}.assets.json`;
+
+                    if (mode === "development") {
+                        try {
+                            const assets = JSON.parse(await fsp.readFile(manifestPath, 'utf8'));
+                            if (assets.sourceHash === sourceHash && existsSync(`./icon/${dir}.json`) &&
+                                existsSync(`./public/${assets.png}`) && existsSync(`./public/${assets.webp}`)) return;
+                        } catch {
+                            // Missing or older generated assets must be regenerated together.
+                        }
+                        console.log(`[sprite] Generating changed or missing icon atlas for "${dir}"...`);
+                    }
 
                     const result = await generateSpriteSheet(pngFiles);
                     const {width, height} = result.properties;
@@ -108,7 +113,6 @@ function get_sprite_plugins(mode) {
 
                     // write the sprite png and json coord
                     await fsp.writeFile(output_icon, result.image);
-                    await fsp.writeFile(`./icon/${dir}.json`, JSON.stringify(coord, null, 2));
 
                     // compress the png to png and webp, and report the size diff
                     function filesize_mb(filename) {
@@ -120,12 +124,8 @@ function get_sprite_plugins(mode) {
                     // Ensure destination directory exists
                     await fsp.mkdir('./public/icon', {recursive: true});
 
-                    const iconBasename = path.basename(output_icon, path.extname(output_icon));
-                    const output_png = path.join('./public/icon', path.basename(output_icon));
-                    const output_webp = path.join('./public/icon', `${iconBasename}.webp`);
-
                     // Compress PNG
-                    await sharp(output_icon)
+                    const png = await sharp(result.image)
                         .png({
                             palette: true,
                             quality: 50,
@@ -133,12 +133,31 @@ function get_sprite_plugins(mode) {
                             dither: 1.0,
                             compressionLevel: 9,
                         })
-                        .toFile(output_png);
+                        .toBuffer();
 
                     // Convert to WebP
-                    await sharp(output_icon)
+                    const webp = await sharp(result.image)
                         .webp({quality: 75})
-                        .toFile(output_webp);
+                        .toBuffer();
+
+                    // Version both formats together with their coordinates. Previously cached
+                    // atlases cannot satisfy a new URL after packing or artwork changes.
+                    const assets = spriteAssetPaths(dir, coord, png, webp);
+                    const output_png = `./public/${assets.png}`;
+                    const output_webp = `./public/${assets.webp}`;
+                    await Promise.all([
+                        fsp.writeFile(output_png, png),
+                        fsp.writeFile(output_webp, webp),
+                        fsp.writeFile(`./icon/${dir}.json`, JSON.stringify(coord, null, 2)),
+                        fsp.writeFile(manifestPath, JSON.stringify({...assets, sourceHash}, null, 2)),
+                    ]);
+
+                    // public/ is copied verbatim: exclude superseded generated atlases from
+                    // the next deploy, while existing clients retain their own cached copies.
+                    const currentFiles = new Set([path.basename(assets.png), path.basename(assets.webp)]);
+                    await Promise.all(readdirSync('./public/icon')
+                        .filter(file => file.startsWith(`${dir}.`) && /\.(png|webp)$/.test(file) && !currentFiles.has(file))
+                        .map(file => fsp.unlink(path.join('./public/icon', file))));
 
                     let size_after_png = filesize_mb(output_png);
                     let size_after_webp = filesize_mb(output_webp);

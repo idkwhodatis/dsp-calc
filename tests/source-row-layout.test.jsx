@@ -54,7 +54,7 @@ describe('horizontal production source strips', () => {
         expect(automatic).toHaveAttribute('data-source-id', 'auto:铁块');
         expect(within(automatic).queryByRole('button', {name: /删除/})).not.toBeInTheDocument();
         expect(within(automatic).getByLabelText('铁块需求产线产量')).toHaveTextContent('150.00');
-        expect(within(strip).getByRole('textbox')).toHaveClass('text-base');
+        expect(within(strip).getByRole('textbox', {name: /分配产量/})).toHaveClass('text-base');
         const count = within(strip).getByLabelText('铁块现有产线 1工厂数量');
         expect(count.parentElement.querySelector('[role="img"]')).toHaveStyle({width: '30px', height: '30px'});
         for (const button of [within(strip).getByRole('button', {name: '位面熔炉'}), within(strip).getByRole('button', {name: /增产剂\s+Mk\.II$/})]) {
@@ -88,14 +88,14 @@ describe('horizontal production source strips', () => {
         expect(handlers.onRemove).toHaveBeenCalledOnce();
     });
 
-    it('contains multiple strips in a keyboard-focusable local horizontal scroller with separate group totals', () => {
+    it('stacks multiple source strips vertically with separate group totals and narrow-screen access', () => {
         render(<Provider><Group><Source automatic output={0}/><Source/><Source ordinal={2} source={{...source, id: 'iron-b'}}/></Group></Provider>);
         const group = screen.getByRole('region', {name: '铁块生产来源'});
-        expect(group).toHaveClass('min-w-0', 'max-w-full');
+        expect(group).toHaveClass('w-max', 'min-w-0', 'max-w-[calc(100vw-3rem)]');
         const scroller = within(group).getByRole('region', {name: '铁块产线，可横向滚动'});
-        expect(scroller).toHaveClass('flex', 'flex-nowrap', 'min-w-0', 'max-w-full', 'overflow-x-auto', 'overscroll-x-contain', 'focus-visible:outline-2');
+        expect(scroller).toHaveClass('flex', 'flex-col', 'min-w-0', 'max-w-full', 'overflow-x-auto', 'overscroll-x-contain', 'focus-visible:outline-2');
         expect(scroller).toHaveAttribute('tabindex', '0');
-        expect(scroller).not.toHaveClass('flex-col');
+        expect(scroller).not.toHaveClass('flex-nowrap');
         expect(within(scroller).getAllByRole('article').map(strip => strip.dataset.sourceId)).toEqual(['auto:铁块', 'iron-a', 'iron-b']);
         expect(within(scroller).queryByLabelText('铁块总需求')).not.toBeInTheDocument();
         expect(within(group).getByLabelText('铁块总需求')).toHaveTextContent('300.00');

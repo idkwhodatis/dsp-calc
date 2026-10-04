@@ -6202,6 +6202,34 @@
       "TimeSpend": 240,
       "Proliferator": 3,
       "IconName": "lighthouse"
+    },
+    {
+      "ID": 162,
+      "Type": 4,
+      "Factories": [
+        2303,
+        2304,
+        2305,
+        2318
+      ],
+      "Name": "黑雾引力透镜",
+      "Items": [
+        1209,
+        5201
+      ],
+      "ItemCounts": [
+        1,
+        12
+      ],
+      "Results": [
+        1211
+      ],
+      "ResultCounts": [
+        1
+      ],
+      "TimeSpend": 360,
+      "Proliferator": 3,
+      "IconName": "darkfog-lens"
     }
   ],
   "items": [
@@ -7506,6 +7534,13 @@
       "Name": "全息信标",
       "GridIndex": 2410,
       "IconName": "lighthouse"
+    },
+    {
+      "ID": 1211,
+      "Type": 3,
+      "Name": "黑雾引力透镜",
+      "GridIndex": null,
+      "IconName": "darkfog-lens"
     }
   ]
 }

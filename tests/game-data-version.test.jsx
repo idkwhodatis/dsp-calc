@@ -10,7 +10,7 @@ import {init_scheme_data} from '../src/scheme_data.jsx';
 import {ContextProvider, GlobalStateContext, NeedsListContext, PlanLoaderContext, StorageWarningContext} from '../src/contexts.jsx';
 import {decodeSavedPlan} from '../src/lib/plan-state.js';
 import {buildGamePickerLayout} from '../src/lib/game-picker-layout.js';
-import {migrateSchemeForGame} from '../src/lib/game-data-migrations.js';
+import {isReplacedLegacyVanillaScheme, migrateSchemeForGame} from '../src/lib/game-data-migrations.js';
 import {backupGameDataStorage, GAME_DATA_BACKUP_KEY, updateScopedStorage} from '../src/lib/storage.js';
 import {baselineSettings, calculateScenario} from './helpers/solver-cases.js';
 
@@ -18,22 +18,31 @@ const baseCount = 238;
 const api = {GameInfo, GlobalState, get_game_data, init_scheme_data};
 const legacyGame = {...default_game_data, recipe_data: default_game_data.recipe_data.slice(0, baseCount),
     recipe_ids: default_game_data.recipe_ids.slice(0, baseCount)};
+const holoGame = {...default_game_data, recipe_data: default_game_data.recipe_data.slice(0, 239),
+    recipe_ids: default_game_data.recipe_ids.slice(0, 239)};
 const readStore = key => JSON.parse(localStorage.getItem(key));
-function oldScheme() {
-    const scheme = init_scheme_data(legacyGame);
+function oldScheme(count = baseCount) {
+    const scheme = init_scheme_data(count === baseCount ? legacyGame : holoGame);
     scheme.item_recipe_choices['石墨烯'] = 2;
     scheme.scheme_for_recipe[0] = {建筑: 1, 增产模式: 2, 增产点数: 4};
     scheme.cost_weight['电力'] = 13;
     scheme.cost_weight['物品额外成本']['铁块'] = {成本: 12, 启用: 1, 与其它成本累计: 1, 溢出时处理成本: 45};
+    if (count === 239) {
+        scheme.scheme_for_recipe[238] = {建筑: 2, 增产模式: 2, 增产点数: 4};
+        scheme.cost_weight['物品额外成本']['全息信标'] = {成本: 27, 启用: 1, 与其它成本累计: 1, 溢出时处理成本: 3};
+    }
     return scheme;
 }
 function expectPreserved(migrated, original) {
-    expect(migrated.scheme_for_recipe.slice(0, baseCount)).toEqual(original.scheme_for_recipe);
+    const count = original.scheme_for_recipe.length;
+    expect(migrated.scheme_for_recipe.slice(0, count)).toEqual(original.scheme_for_recipe);
     for (const [item, choice] of Object.entries(original.item_recipe_choices)) expect(migrated.item_recipe_choices[item]).toBe(choice);
     const restored = structuredClone(migrated);
-    restored.scheme_for_recipe.pop();
-    delete restored.item_recipe_choices['全息信标'];
-    delete restored.cost_weight['物品额外成本']['全息信标'];
+    restored.scheme_for_recipe.length = count;
+    for (const item of count === 238 ? ['全息信标', '黑雾引力透镜'] : ['黑雾引力透镜']) {
+        delete restored.item_recipe_choices[item];
+        delete restored.cost_weight['物品额外成本'][item];
+    }
     expect(restored).toEqual(original);
 }
 function Probe({observe}) {
@@ -52,14 +61,18 @@ function mount() {
 beforeEach(() => { localStorage.clear(); vi.spyOn(console, 'log').mockImplementation(() => {}); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-describe('verified vanilla Holo Beacon data increment', () => {
+describe('verified vanilla crafting data increments', () => {
     it('preserves all 238 original recipe values and ordering from commit d531233', () => {
         // SHA-256 of JSON.stringify(original recipes), computed from the pristine Git source.
         expect(createHash('sha256').update(JSON.stringify(vanilla.recipes.slice(0, baseCount))).digest('hex'))
             .toBe('c8143f0b621fd4d293afeef55d11d1ffd7b53c3ac156833de4ad9883eb454759');
-        expect(vanilla.recipes).toHaveLength(239);
-        expect(vanilla.items).toHaveLength(175);
-        const legacyInfo = new GameInfo(legacyGame);
+        expect(createHash('sha256').update(JSON.stringify(vanilla.recipes.slice(0, 239))).digest('hex'))
+            .toBe('e94e1821f7ec342181c5c139e17de8beb20a2c2099a90fc12759bf711fbe9317');
+        expect(createHash('sha256').update(JSON.stringify(vanilla.items.slice(0, 175))).digest('hex'))
+            .toBe('2ba74cc5eb83bbfbff344e44318bdbabb977505cb6deafbec5146d7416abc846');
+        expect(vanilla.recipes).toHaveLength(240);
+        expect(vanilla.items).toHaveLength(176);
+        const legacyInfo = new GameInfo(holoGame);
         const info = new GameInfo(default_game_data);
         for (const [item, recipes] of Object.entries(legacyInfo.item_data)) expect(info.item_data[item]).toEqual(recipes);
         expect(default_game_data.factory_data).toEqual(legacyGame.factory_data);
@@ -102,39 +115,86 @@ describe('verified vanilla Holo Beacon data increment', () => {
         expect(vanilla_game_version).toBe('0.10.31.24710');
         expect(vanilla_data_description).toContain('仅原版追加已核验的 v0.10.34 全息信标');
         expect(vanilla_data_description).toContain('尚未完整适配 v0.10.35');
-        expect(vanilla.items.some(item => item.ID === 1211)).toBe(false);
+        expect(vanilla_data_description).toContain('v0.10.35 黑雾引力透镜制造配方');
+        expect(vanilla_data_description).toContain('射线接收站新模式待核验');
         for (const {value} of get_mod_options()) {
             // Void's bundled profile includes MoreMegaStructure, as required by the selector.
             const mods = value === 'com.ckcz123.DSP_Battle' ? ['Gnimaerd.DSP.plugin.MoreMegaStructure', value] : [value];
             expect(new GameInfo(get_game_data(mods)).item_data['全息信标']).toBeUndefined();
+            expect(new GameInfo(get_game_data(mods)).item_data['黑雾引力透镜']).toBeUndefined();
         }
+    });
+
+    it('adds only Dark Fog Lens crafting with corroborated quantities, time and assembler family', () => {
+        expect(vanilla.recipes[239]).toEqual({ID: 162, Type: 4, Factories: [2303, 2304, 2305, 2318],
+            Name: '黑雾引力透镜', Items: [1209, 5201], ItemCounts: [1, 12], Results: [1211], ResultCounts: [1],
+            TimeSpend: 360, Proliferator: 3, IconName: 'darkfog-lens'});
+        expect(default_game_data.recipe_data[239]).toMatchObject({原料: {引力透镜: 1, 黑雾矩阵: 12},
+            产物: {黑雾引力透镜: 1}, 时间: 6, 增产: 3});
+        expect(vanilla.recipes.filter(recipe => recipe.Items.includes(1211))).toEqual([]);
+        expect(vanilla.recipes.find(recipe => recipe.ID === 15201)).toMatchObject({Items: [], Results: [5201],
+            ResultCounts: [1], TimeSpend: 60, Proliferator: 0, Factories: [1]});
+    });
+
+    it.each([['制造台 Mk.I', 4 / 3], ['制造台 Mk.II', 1], ['制造台 Mk.III', 2 / 3], ['重组式制造台', 1 / 3]])(
+        'crafts 10 Dark Fog Lenses/min with %s and the existing matrix-drop supply', (factory, count) => {
+            const result = calculateScenario(api, {needs: {黑雾引力透镜: 10}, factories: {黑雾引力透镜: factory}});
+            expect(result.production['黑雾引力透镜']).toBe(10);
+            expect(result.production['引力透镜']).toBe(10);
+            expect(result.production['黑雾矩阵']).toBe(120);
+            expect(result.buildings['黑雾引力透镜']).toBeCloseTo(count, 10);
+        });
+
+    it.each([[2, 0.8, 8, 96], [1, 0.5, 10, 120]])(
+        'applies lens crafting proliferation mode %s to machines and material demand', (mode, count, lenses, matrices) => {
+            const result = calculateScenario(api, {needs: {黑雾引力透镜: 10}, factories: {黑雾引力透镜: '制造台 Mk.II'},
+                proliferation: {黑雾引力透镜: {增产模式: mode, 增产点数: 4}}});
+            expect(result.production['黑雾引力透镜']).toBe(10);
+            expect(result.production['引力透镜']).toBe(lenses);
+            expect(result.production['黑雾矩阵']).toBe(matrices);
+            expect(result.buildings['黑雾引力透镜']).toBeCloseTo(count, 10);
+        });
+
+    it('keeps the lens selectable with its original icon without guessing a vanilla grid slot', () => {
+        expect(vanilla.items.find(item => item.ID === 1211)).toEqual({ID: 1211, Type: 3, Name: '黑雾引力透镜',
+            GridIndex: null, IconName: 'darkfog-lens'});
+        const layout = buildGamePickerLayout(new GameInfo(default_game_data));
+        expect(layout.pages.find(page => page.id === 'other').entries).toContainEqual({item: '黑雾引力透镜'});
+        expect(layout.names.filter(item => item === '黑雾引力透镜')).toHaveLength(1);
+        const icon = readFileSync('icon/Vanilla/darkfog-lens.png');
+        expect(icon.readUInt32BE(16)).toBe(80);
+        expect(icon.readUInt32BE(20)).toBe(80);
     });
 });
 
 describe('append-only strategy and plan migration', () => {
-    it('adds only new defaults, preserves prior choices/costs, and is idempotent without mutating input', () => {
-        const old = oldScheme();
+    it.each([238, 239])('migrates %s recipes without changing prior choices/costs or mutating input', count => {
+        const old = oldScheme(count);
         const before = structuredClone(old);
         const migrated = migrateSchemeForGame(old, default_game_data);
         expectPreserved(migrated, old);
         expect(old).toEqual(before);
-        expect(migrated.scheme_for_recipe[238]).toEqual({建筑: 0, 增产点数: 0, 增产模式: 0});
+        expect(migrated.scheme_for_recipe[239]).toEqual({建筑: 0, 增产点数: 0, 增产模式: 0});
+        if (count === 238) expect(migrated.scheme_for_recipe[238]).toEqual({建筑: 0, 增产点数: 0, 增产模式: 0});
         expect(migrated.item_recipe_choices['全息信标']).toBe(1);
+        expect(migrated.item_recipe_choices['黑雾引力透镜']).toBe(1);
+        expect(isReplacedLegacyVanillaScheme(old, migrated)).toBe(true);
         expect(migrateSchemeForGame(migrated, default_game_data)).toBe(migrated);
     });
 
-    it('refuses unknown lengths, foreign scopes and changed append identities', () => {
-        const old = oldScheme();
+    it.each([238, 239])('refuses foreign scopes or changed append identities when migrating %s recipes', count => {
+        const old = oldScheme(count);
         for (const game of [{...default_game_data, game_name: 'GenesisBook'}, {...default_game_data, data_revision: 'future'},
-            {...default_game_data, recipe_ids: [...default_game_data.recipe_ids.slice(0, 238), 999]}]) {
+            {...default_game_data, recipe_ids: [...default_game_data.recipe_ids.slice(0, 238), 999, 162]},
+            {...default_game_data, recipe_ids: [...default_game_data.recipe_ids.slice(0, 239), 999]}]) {
             expect(migrateSchemeForGame(old, game)).toBe(old);
         }
-        old.scheme_for_recipe.pop();
+        old.scheme_for_recipe.length = 237;
         expect(() => decodeSavedPlan(old, 'scheme', new GameInfo(default_game_data))).toThrow('不匹配');
     });
 
-    it('restores a legacy autosave, archives its exact raw bytes and preserves another game across reload', () => {
-        const original = oldScheme();
+    it.each([238, 239])('restores a %s-recipe autosave, archives exact raw bytes and preserves another game across reload', count => {
+        const original = oldScheme(count);
         const raw = JSON.stringify({Vanilla: original, AnotherGame: {leave: 'alone'}}, null, 2);
         localStorage.setItem('auto_scheme', raw);
         let app = mount();
@@ -148,9 +208,11 @@ describe('append-only strategy and plan migration', () => {
         expect(app.current().warning).toBe('');
     });
 
-    it.each(['scheme', 'needs'])('restores an old named %s with sources and recoverable original content', kind => {
-        const original = oldScheme();
-        const sources = [{id: 'saved-source', target_item: '铁块', standalone: kind === 'scheme',
+    it.each([[238, 'scheme'], [238, 'needs'], [239, 'scheme'], [239, 'needs']])(
+        'restores a %s-recipe named %s with source identities and recoverable original content', (count, kind) => {
+        const original = oldScheme(count);
+        const target = count === 239 ? '全息信标' : '铁块';
+        const sources = [{id: 'saved-source', target_item: target, standalone: kind === 'scheme',
             ...(kind === 'needs' ? {scope: 'plan'} : {}), output_per_minute: 10,
             recipe_choice: 1, building: 0, proliferator_mode: 0, proliferator_points: 0}];
         const saved = kind === 'scheme' ? {...original, production_sources: sources} : {
@@ -164,6 +226,7 @@ describe('append-only strategy and plan migration', () => {
         act(() => app.current().load(saved, kind));
         expectPreserved(readStore('auto_scheme').Vanilla, original);
         expect(app.current().state.settings.production_sources).toEqual(sources);
+        expect(app.current().state.item_data[target][1]).toBe(count === 239 ? 238 : 0);
         if (kind === 'needs') {
             expect(app.current().needs).toEqual({铁块: 60});
             expect(readStore('auto_settings').production_sources).toEqual([]);
@@ -190,8 +253,8 @@ describe('append-only strategy and plan migration', () => {
         expect(localStorage.getItem(GAME_DATA_BACKUP_KEY)).toBeNull();
     });
 
-    it('does not overwrite a legacy autosave when its recovery archive cannot be written', () => {
-        const raw = JSON.stringify({Vanilla: oldScheme()});
+    it.each([238, 239])('does not overwrite a %s-recipe autosave when its recovery archive cannot be written', count => {
+        const raw = JSON.stringify({Vanilla: oldScheme(count)});
         localStorage.setItem('auto_scheme', raw);
         const set = Storage.prototype.setItem;
         vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
@@ -200,12 +263,12 @@ describe('append-only strategy and plan migration', () => {
         });
         const app = mount();
         expect(localStorage.getItem('auto_scheme')).toBe(raw);
-        expect(app.current().state.scheme_data.scheme_for_recipe).toHaveLength(239);
+        expect(app.current().state.scheme_data.scheme_for_recipe).toHaveLength(240);
         expect(app.current().warning).toContain('原始保存数据未被修改');
     });
 
-    it('loads an old preset without writing a backup, but refuses overwrite when archival fails', () => {
-        const saved = oldScheme();
+    it.each([238, 239])('loads a %s-recipe preset without a backup, but refuses overwrite when archival fails', count => {
+        const saved = oldScheme(count);
         const raw = JSON.stringify({Vanilla: {legacy: saved}});
         localStorage.setItem('scheme_data', raw);
         localStorage.setItem(GAME_DATA_BACKUP_KEY, '{unreadable');
@@ -217,6 +280,21 @@ describe('append-only strategy and plan migration', () => {
             ({...current, legacy: app.current().state.scheme_data}))).toThrow('备份无法读取');
         expect(localStorage.getItem('scheme_data')).toBe(raw);
         expect(localStorage.getItem(GAME_DATA_BACKUP_KEY)).toBe('{unreadable');
+    });
+
+    it.each([238, 239])('does not reinterpret a %s-recipe save with conflicting increment fields', count => {
+        const conflicts = [
+            saved => { saved.item_recipe_choices['黑雾引力透镜'] = 1; },
+            saved => { saved.cost_weight['物品额外成本']['黑雾引力透镜'] = {}; },
+            saved => { if (count === 238) saved.item_recipe_choices['全息信标'] = 1;
+                else delete saved.item_recipe_choices['全息信标']; },
+        ];
+        for (const change of conflicts) {
+            const saved = oldScheme(count);
+            change(saved);
+            expect(migrateSchemeForGame(saved, default_game_data)).toBe(saved);
+            expect(isReplacedLegacyVanillaScheme(saved, init_scheme_data(default_game_data))).toBe(false);
+        }
     });
 
     it('preserves unknown autosave revisions instead of automatically resetting their data', () => {

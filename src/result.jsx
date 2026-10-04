@@ -458,7 +458,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                             output={source.output} buildings={source.buildings} factory_name={source.factory_name}
                             recipe_id={source.recipe_id} recipe_choice={source.recipe_choice} building={source.building}
                             proliferator_mode={source.proliferator_mode} proliferator_points={source.proliferator_points}
-                            onOutputChange={value => update_source(source.id, {output_per_minute: fromDisplayRate(Number(value), settings)})}
+                            onOutputChange={value => update_source(source.id, {quantity_mode: 'rate', output_per_minute: fromDisplayRate(Number(value), settings)})}
+                            onBuildingsChange={value => update_source(source.id, {quantity_mode: 'buildings', building_quantity: Number(value)})}
                             onRecipeChange={value => {
                                 const recipe = game_data.recipe_data[item_data[i][Number(value)]];
                                 const mode = source.proliferator_mode;

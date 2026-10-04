@@ -21,6 +21,7 @@ export function createProductionSource(state, item, {standalone = false} = {}) {
         id: globalThis.crypto?.randomUUID?.() || `source-${Date.now()}-${++nextSourceId}`,
         target_item: item,
         standalone: standalone === true,
+        quantity_mode: 'rate',
         output_per_minute: 0,
         recipe_choice: choice,
         building: Number(config.建筑) || 0,
@@ -124,6 +125,37 @@ export function productionSourceNode(state, source, {mineralized = false} = {}) 
     return node;
 }
 
+/** The last edited quantity owns the source; older records remain fixed-rate. */
+export function resolveProductionSource(state, source) {
+    const mode = source.quantity_mode ?? 'rate';
+    if (mode !== 'rate' && mode !== 'buildings') throw new Error('来源数量模式无效，请重新输入产量或工厂数量');
+    const value = mode === 'buildings' ? source.building_quantity : source.output_per_minute;
+    const quantity = Number(value);
+    if (value === null || value === undefined || String(value).trim() === '' || !Number.isFinite(quantity) || quantity < 0) {
+        throw new Error(`${mode === 'buildings' ? '工厂数量' : '分配产量'}必须为大于或等于 0 的有限数值`);
+    }
+    const node = productionSourceNode(state, source);
+    const rate = mode === 'buildings' ? quantity * node.output_per_second * 60 : quantity;
+    if (!Number.isFinite(rate)) throw new Error('分配产量过大，计算已超出可表示范围');
+    node.source = {...node.source, quantity_mode: mode, output_per_minute: rate};
+    if (mode === 'buildings') node.source.building_quantity = quantity;
+    return node;
+}
+
+/** Keep saved canonical rates current when a setting changes physical capacity. */
+export function synchronizeProductionSourceRates(state) {
+    return (state.settings.production_sources || []).map(source => {
+        if (source?.quantity_mode !== 'buildings' || source.migration_error) return source;
+        try {
+            const {output_per_minute} = resolveProductionSource(state, source).source;
+            return output_per_minute === source.output_per_minute ? source : {...source, output_per_minute};
+        } catch {
+            // Preserve invalid records and their last valid rate for repair.
+            return source;
+        }
+    });
+}
+
 function energyPerBuilding(state, node) {
     const {settings, game_data: game} = state;
     const name = node.factory.名称;
@@ -191,7 +223,8 @@ function automaticSource(state, item) {
 }
 
 function sourceResult(state, source, node, output, error = null) {
-    const buildings = node ? output / (state.settings.is_time_unit_minute ? 60 : 1) / node.output_per_second : 0;
+    const buildings = node ? node.source.quantity_mode === 'buildings' && !node.mineralized
+        ? node.source.building_quantity : output / (state.settings.is_time_unit_minute ? 60 : 1) / node.output_per_second : 0;
     const result = {
         ...(node?.source || source),
         recipe_id: node?.recipe_id,
@@ -359,10 +392,8 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
         const safe = {...source, id: source.id || `source-${index}`, standalone: source.standalone === true};
         try {
             if (safe.migration_error) throw new Error(safe.migration_error);
-            const rate = Number(source.output_per_minute);
-            if (!Number.isFinite(rate) || rate < 0) throw new Error('分配产量必须为大于或等于 0 的有限数值');
-            const node = productionSourceNode(state, safe);
-            return sourceResult(state, safe, node, toDisplayRate(rate, state.settings));
+            const node = resolveProductionSource(state, safe);
+            return sourceResult(state, safe, node, toDisplayRate(node.source.output_per_minute, state.settings));
         } catch (error) {
             return sourceResult(state, safe, null, 0, error.message);
         }
@@ -376,7 +407,7 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
             // Keep every saved setting and the canonical allocation. Pausing is
             // derived from the current targets and never erases a saved source.
             const stored = sources[index];
-            pausedSources.push({...stored, id: source.id, standalone: false});
+            pausedSources.push({...stored, output_per_minute: source.output_per_minute, id: source.id, standalone: false});
         }
     }
     // Mixed older/newer settings remain safe while callers migrate their saves.

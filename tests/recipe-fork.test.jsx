@@ -136,7 +136,7 @@ describe('ordinary-row recipe fork shortcut', () => {
         expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent(initialRate);
         expect(within(auto()).getByRole('button', {name: '重氢配方 1', exact: true})).toHaveAttribute('aria-pressed', 'true');
         expect(within(manual()).getByRole('button', {name: '重氢配方 2', exact: true})).toHaveAttribute('aria-pressed', 'true');
-        expect(within(manual()).getByRole('textbox')).toHaveValue('0.00');
+        expect(within(manual()).getByRole('textbox', {name: /分配产量/})).toHaveValue('0.00');
         expect(activeSources()[0]).toMatchObject({target_item: '重氢', recipe_choice: 2, output_per_minute: 0, standalone: false, scope: 'plan'});
         expect(savedSources()).toEqual([]);
         expect(savedScheme()).toEqual(scheme);
@@ -208,15 +208,15 @@ describe('ordinary-row recipe fork shortcut', () => {
         render(<Overview initialNeeds={{'重氢': minute ? 300 : 5}}/>);
         await user.click(screen.getByRole('button', {name: forkName()}));
         expect(activeSources()[0].output_per_minute).toBe(0);
-        expect(within(manual()).getByRole('textbox')).toHaveValue('0.00');
-        const input = within(manual()).getByRole('textbox');
+        expect(within(manual()).getByRole('textbox', {name: /分配产量/})).toHaveValue('0.00');
+        const input = within(manual()).getByRole('textbox', {name: /分配产量/});
         await user.clear(input);
         await user.type(input, minute ? '150' : '2.5');
         await user.keyboard('{Enter}');
         expect(activeSources()[0].output_per_minute).toBe(150);
         await user.click(screen.getByRole('button', {name: '切换时间单位'}));
         expect(activeSources()[0].output_per_minute).toBe(150);
-        expect(within(manual()).getByRole('textbox')).toHaveValue(minute ? '2.50' : '150.00');
+        expect(within(manual()).getByRole('textbox', {name: /分配产量/})).toHaveValue(minute ? '2.50' : '150.00');
     });
 
     it('prefills the clicked recipe\'s factory and proliferation config rather than the automatic recipe\'s', async () => {
@@ -259,7 +259,7 @@ describe('ordinary-row recipe fork shortcut', () => {
         expect(activeSources()[0]).toMatchObject({target_item: '氢', recipe_choice: 2, output_per_minute: 0, standalone: true, scope: 'plan'});
         expect(savedSources()).toEqual([]);
         expect(screen.getByRole('region', {name: '氢生产来源'})).toBeInTheDocument();
-        expect(within(manual('氢')).getByRole('textbox')).toHaveValue('0.00');
+        expect(within(manual('氢')).getByRole('textbox', {name: /分配产量/})).toHaveValue('0.00');
         expect(within(auto('氢')).getByLabelText('氢需求产线产量')).toHaveTextContent('0.00');
         expect(screen.queryByText(/已暂停.*条未被当前需求使用的来源/)).not.toBeInTheDocument();
     });

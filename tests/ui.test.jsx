@@ -199,7 +199,7 @@ describe('calculator UI interactions', () => {
         await user.type(output, '180');
         await user.keyboard('{Enter}');
         expect(readStore('auto_settings').production_sources[0].output_per_minute).toBe(180);
-        expect(screen.getByLabelText('铁块现有产线 1工厂数量')).toHaveTextContent('3.00');
+        expect(screen.getByLabelText('铁块现有产线 1工厂数量')).toHaveValue('3.00');
         await user.click(screen.getByRole('button', {name: '删除铁块现有产线 1'}));
         expect(readStore('auto_settings').production_sources).toEqual([]);
         expect(screen.getByText('开始规划你的生产线')).toBeInTheDocument();

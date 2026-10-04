@@ -8,11 +8,13 @@ The refactor preserves the existing game data, recipe choices, proliferation set
 
 1. 添加生产目标，例如 **引力矩阵 60 / min**。
 2. 选择 **添加现有产线 → 重氢**。新来源从 **0** 开始，保留原来的需求产线；重氢组仍位于原来的中间产物位置。
-3. 组标题显示 **总需求 300 / min**。组内的需求产线与现有产线横向并排，每条来源的产量、配方、建筑和增产设置也排成一条横向控制带；较窄屏幕可在组内横向滚动。
+3. 组标题显示 **总需求 300 / min**。组内的需求产线与现有产线纵向排列，每条来源内部的产量、配方、建筑和增产设置仍排成一条紧凑横向控制带；增加来源不会横向拉长整组，较窄屏幕仍可滚动查看单条来源的完整控件。
 4. 在新来源中选择轨道采集器、分馏或粒子对撞配方，再填写 **150 / min**。需求产线承担剩余 **150 / min**，原料、建筑与电力会一起重新计算。
 5. 用组内 **添加产线** 继续拆分来源。超过需求时会显示多余产物；不会生成负的自动产量，也不会擅自平均分配各条产线。副产物供给单独列出。
 
-分配数值表示可用于满足需求的**净产量**，循环配方内部重复使用的物品不会重复计入。每条现有产线有独立身份和设置；删除后由需求产线重新平衡。更多来源可在组内横向滚动。
+分配数值表示可用于满足需求的**净产量**，循环配方内部重复使用的物品不会重复计入。每条现有产线有独立身份和设置；删除后由需求产线重新平衡。更多来源会依次排在组内下方。
+
+现有产线的**分配产量**与**工厂数量**可以双向编辑，最后实际编辑的字段会标为「固定」。固定产量时，修改配方、工厂类型或增产设置会重算工厂数量；固定工厂数量时则重算产量，需求产线继续补足剩余需求。支持小数工厂数量，切换每分钟 / 每秒只换算产量显示；没有有效生产设施的来源不能填写工厂数量。旧保存默认保持固定产量，新完整计划会同时保留固定方式和精确数量。
 
 只有一条来源时，也可以悬停在未选中的配方上，点击出现的小 **＋**，直接添加使用该配方的 **0** 产量来源。键盘聚焦同样会显示按钮，触屏上则直接显示；原来的需求配方保持不变。
 
@@ -40,9 +42,14 @@ The refactor preserves the existing game data, recipe choices, proliferation set
 
 ## 游戏数据版本
 
-基础数据仍为 **0.10.31.24710**，仅在原版配置中补入已核验的 **全息信标**：3 铁块 + 4 棱镜 + 2 电浆激发器 + 2 电路板，4 秒生产 1 个，支持增产与加速。原有 238 条配方及序号完整保留，旧策略和完整计划会按这一明确增量迁移。
+基础数据仍为 **0.10.31.24710**，原版配置补入两条经来源核对的制造配方，均支持增产与加速：
 
-这不是完整的 0.10.35 适配；黑雾引力透镜的原版槽位及接收站消耗、产出与喷涂参数仍待当前游戏数据核实。模组组合保持各自原有数据。来源、图标、固定槽位移动和保存兼容说明见[数据来源与版本范围](docs/game-data-provenance.md)。
+- **全息信标（v0.10.34）**：3 铁块 + 4 棱镜 + 2 电浆激发器 + 2 电路板，4 秒生产 1 个
+- **黑雾引力透镜（v0.10.35）**：1 引力透镜 + 12 黑雾矩阵，6 秒生产 1 个
+
+原有 238 条配方和此前追加的全息信标配方及序号完整保留；238 / 239 条配方版本的旧策略与完整计划会迁移至 240 条，覆盖旧保存前保留原始备份。
+
+这不是完整的 0.10.35 适配。黑雾引力透镜的原版槽位尚待核实，暂列物品选择器的「其它」页，也可搜索选择；射线接收站使用黑雾透镜的消耗、产出与喷涂参数尚未加入。黑雾矩阵沿用原有黑雾掉落来源，模组组合保持各自原有数据。来源、图标、槽位与保存兼容说明见[数据来源与版本范围](docs/game-data-provenance.md)。
 
 ## Local development
 
@@ -53,7 +60,7 @@ npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite. On the first development start and on every production build, the Vite sprite plugin generates icon coordinates and PNG/WebP atlases from `icon/`. Generated files are ignored by Git; do not remove the source icons.
+Open the URL printed by Vite. On development startup when source icons change, and on every production build, the Vite sprite plugin generates icon coordinates and PNG/WebP atlases from `icon/`. Content-hashed sprite URLs keep new coordinates paired with the correct images even when an older PWA has cached its atlases. Generated files are ignored by Git; do not remove the source icons.
 
 ```sh
 npm run lint
@@ -113,9 +120,11 @@ For root/custom-domain hosting, use `VITE_BASE_PATH=/` and pass `/` to the verif
 
 The verification script checks the emitted HTML asset links, PWA start URL/scope, manifest icons, service worker and game sprite files. It also runs in the Pages workflow. See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) and [Vite's GitHub Pages guide](https://vite.dev/guide/static-deploy#github-pages).
 
-### Disabled upstream workflows
+### Selectively restored workflows
 
-Only `.github/workflows/pages.yml` is active. All five inherited workflow files are preserved under `.github/disabled-workflows/`, outside the directory GitHub executes. Branch/PR previews, upstream Netlify publishing, the original release-branch Pages deploy, and tagged Tauri releases are disabled. They cannot run on pushes, pull requests, tags, schedules or manual dispatches while archived there.
+The inherited **PR-only preview** and **two tag-only release workflows** are active alongside Pages. PRs get a validated downloadable preview without external publication. Tag pushes build a web artifact and an unsigned Windows/Tauri package with a **draft** GitHub release; Netlify publication retains its strict upstream-repository guard and is skipped on this fork. None of these restored workflows runs on ordinary branch pushes.
+
+The every-push branch preview and old `main` → `release` Pages deploy remain under `.github/disabled-workflows/`, outside the directory GitHub executes. Their manual/push triggers are disabled, preventing competing deployment paths. See the [complete trigger and permission inventory](docs/github-actions.md), including artifact access and release review instructions.
 
 The Pages workflow listens for branch pushes and checks the repository's current default branch at job time, so a rename from `main` to `master` does not silently stop deployment. Pull requests targeting the default branch still run validation without deployment. Manual runs deploy only when the selected ref is the default branch.
 

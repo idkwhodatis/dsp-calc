@@ -2,8 +2,9 @@ import {useContext} from 'react';
 import {GlobalStateContext} from './contexts';
 import {get_icon_by_item} from "./GameData.jsx";
 import {Tooltip, TooltipContent, TooltipTrigger} from './components/ui/tooltip';
+import {createIconStyles} from './lib/icon-styles.js';
 
-const image_index_modules = import.meta.glob('../icon/*.json', {
+const image_index_modules = import.meta.glob(['../icon/*.json', '!../icon/*.assets.json'], {
     import: 'default',
     eager: true,
 });
@@ -15,22 +16,15 @@ const image_indices = Object.fromEntries(
             [module.replace(/^\.\.\/icon\/(.+)\.json/, "$1"), icons]
         ))
 
-export function IconStyles() {
-    function get_icon_style(mod_name) {
-        //console.log("mod_name", mod_name)
-        return `
-.icon-${mod_name} {
-    vertical-align: middle;
-    display: inline-block;
-    flex-shrink: 0;
-    background-image: url('${import.meta.env.BASE_URL}icon/${mod_name}.png');
-    @supports (background-image: url('${import.meta.env.BASE_URL}icon/${mod_name}.webp')) {
-        background-image: url('${import.meta.env.BASE_URL}icon/${mod_name}.webp');
-    }
-}`;
-    }
+const image_asset_modules = import.meta.glob('../icon/*.assets.json', {
+    import: 'default',
+    eager: true,
+});
+const image_assets = Object.fromEntries(Object.entries(image_asset_modules).map(([module, assets]) =>
+    [module.replace(/^\.\.\/icon\/(.+)\.assets\.json$/, '$1'), assets]));
 
-    const styles = Object.keys(image_indices).map(get_icon_style).join("\n");
+export function IconStyles() {
+    const styles = createIconStyles(image_assets, import.meta.env.BASE_URL);
     return <style>{styles}</style>;
 }
 

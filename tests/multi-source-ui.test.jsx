@@ -71,7 +71,7 @@ async function allocate(user, value, item = '重氢', ordinal = 1) {
 }
 
 describe('product-grouped independent source cards', () => {
-    it('keeps an intermediate at its dependency position with two horizontal cards and separate total demand', async () => {
+    it('keeps an intermediate at its dependency position with two vertically stacked source strips and separate total demand', async () => {
         const user = userEvent.setup();
         const initialNeeds = {'氘核燃料棒': 30};
         const baseline = render(<Overview initialNeeds={initialNeeds}/>);
@@ -88,17 +88,17 @@ describe('product-grouped independent source cards', () => {
         expect(group.closest('tr')).toHaveAttribute('data-product', '重氢');
         expect(group.closest('td')).toHaveAttribute('colspan', '8');
         const cards = within(group).getByRole('region', {name: '重氢产线，可横向滚动'});
-        expect(cards).toHaveClass('flex', 'flex-nowrap', 'overflow-x-auto');
-        expect(cards).not.toHaveClass('flex-col');
+        expect(cards).toHaveClass('flex', 'flex-col', 'overflow-x-auto');
+        expect(cards).not.toHaveClass('flex-nowrap');
         expect(within(cards).getAllByRole('article')).toHaveLength(2);
         expect(within(group).getByLabelText('重氢总需求')).toHaveTextContent(/^300.00$/);
         expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent('300.00');
-        expect(within(manual()).getByRole('textbox')).toHaveValue('0.00');
+        expect(within(manual()).getByRole('textbox', {name: /分配产量/})).toHaveValue('0.00');
         await allocate(user, 150);
         expect(productOrder()).toEqual(order);
         expect(within(group).getByLabelText('重氢总需求')).toHaveTextContent(/^300.00$/);
         expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent('150.00');
-        expect(within(manual()).getByRole('textbox')).toHaveValue('150.00');
+        expect(within(manual()).getByRole('textbox', {name: /分配产量/})).toHaveValue('150.00');
         expect(within(group).getByLabelText('重氢合计生产')).toHaveTextContent('300.00 / min');
     });
 
@@ -125,7 +125,7 @@ describe('product-grouped independent source cards', () => {
         await user.click(screen.getByRole('button', {name: '添加重氢产线'}));
         const cards = screen.getByRole('region', {name: '重氢产线，可横向滚动'});
         expect(within(cards).getAllByRole('article')).toHaveLength(4);
-        expect(within(manual('重氢', 2)).getByRole('textbox')).toHaveValue('0.00');
+        expect(within(manual('重氢', 2)).getByRole('textbox', {name: /分配产量/})).toHaveValue('0.00');
         const thirdId = manual('重氢', 3).dataset.sourceId;
         expect(new Set(within(cards).getAllByRole('article').map(card => card.dataset.sourceId)).size).toBe(4);
         await user.click(within(manual('重氢', 2)).getByRole('button', {name: '删除重氢现有产线 2'}));
@@ -160,7 +160,7 @@ describe('product-grouped independent source cards', () => {
         const user = userEvent.setup();
         seed([source('重氢', 150)]);
         render(<Overview/>);
-        const input = within(manual()).getByRole('textbox');
+        const input = within(manual()).getByRole('textbox', {name: /分配产量/});
         await user.clear(input);
         await user.type(input, '-2');
         expect(input).toHaveAttribute('aria-invalid', 'true');
@@ -168,7 +168,7 @@ describe('product-grouped independent source cards', () => {
         expect(input).toHaveValue('150.00');
         expect(within(auto()).getByLabelText('重氢需求产线产量')).toHaveTextContent('150.00');
         await user.click(screen.getByRole('button', {name: '显示每秒'}));
-        expect(within(manual()).getByRole('textbox')).toHaveValue('2.50');
+        expect(within(manual()).getByRole('textbox', {name: /分配产量/})).toHaveValue('2.50');
         expect(activeSources()[0].output_per_minute).toBe(150);
     });
 
@@ -178,7 +178,7 @@ describe('product-grouped independent source cards', () => {
         const group = screen.getByRole('region', {name: '铁块生产来源'});
         expect(group.querySelector('[role="img"]')).toHaveStyle({width: '40px', height: '40px'});
         expect(manual('铁块')).toHaveClass('shrink-0', 'text-base', 'py-4');
-        expect(within(manual('铁块')).getByRole('textbox')).toHaveClass('text-base');
+        expect(within(manual('铁块')).getByRole('textbox', {name: /分配产量/})).toHaveClass('text-base');
         expect(within(manual('铁块')).getByRole('button', {name: '位面熔炉'}).querySelector('[role="img"]')).toHaveStyle({width: '32px', height: '32px'});
         const recipe = manual('铁块').querySelector('.dsp-full-recipe');
         expect(recipe.querySelector('[role="img"]')).toHaveStyle({width: '28px', height: '28px'});
@@ -232,7 +232,7 @@ describe('product-grouped independent source cards', () => {
         expect(within(dialogFurnace).getAllByRole('cell')[1]).toHaveTextContent('6.00');
         await user.keyboard('{Escape}');
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-        expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('150.00');
+        expect(within(manual('铁块')).getByRole('textbox', {name: /分配产量/})).toHaveValue('150.00');
     });
 
     it('keeps an explicitly independent zero-only product editable when there is no target demand', () => {
@@ -240,7 +240,7 @@ describe('product-grouped independent source cards', () => {
         render(<Overview initialNeeds={{}}/>);
         expect(screen.getByLabelText('铁块总需求')).toHaveTextContent(/^0.00$/);
         expect(within(auto('铁块')).getByLabelText('铁块需求产线产量')).toHaveTextContent(/^0.00$/);
-        expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('0.00');
+        expect(within(manual('铁块')).getByRole('textbox', {name: /分配产量/})).toHaveValue('0.00');
         expect(screen.queryByText('开始规划你的生产线')).not.toBeInTheDocument();
     });
 
@@ -271,14 +271,14 @@ describe('product-grouped independent source cards', () => {
         expect(screen.getByText('铁块 · 60.00 / min')).toBeVisible();
         await user.click(screen.getByRole('button', {name: '作为独立产线启用'}));
         expect(screen.queryByText(/已暂停.*条未被当前需求使用的来源/)).not.toBeInTheDocument();
-        expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('60.00');
+        expect(within(manual('铁块')).getByRole('textbox', {name: /分配产量/})).toHaveValue('60.00');
         await user.click(screen.getByRole('button', {name: '添加铁块产线'}));
         expect(activeSources().every(source => source.standalone && source.scope === 'global')).toBe(true);
         expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources).toEqual(activeSources());
         first.unmount();
         runtimeSources = [];
         render(<Overview initialNeeds={{}}/>);
-        expect(within(manual('铁块')).getByRole('textbox')).toHaveValue('60.00');
+        expect(within(manual('铁块')).getByRole('textbox', {name: /分配产量/})).toHaveValue('60.00');
         expect(manual('铁块', 2)).toBeInTheDocument();
     });
 

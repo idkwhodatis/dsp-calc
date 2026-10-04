@@ -1,41 +1,54 @@
 const isStorageRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 export const VANILLA_HOLO_REVISION = 'vanilla-0.10.31.24710+holo-beacon-0.10.34';
+export const VANILLA_DARK_FOG_REVISION = `${VANILLA_HOLO_REVISION}+dark-fog-lens-crafting-0.10.35`;
 export const LEGACY_VANILLA_RECIPE_COUNT = 238;
+
+const additions = [
+    {index: 238, id: 161, name: '全息信标'},
+    {index: 239, id: 162, name: '黑雾引力透镜'},
+];
+const currentRecipeCount = LEGACY_VANILLA_RECIPE_COUNT + additions.length;
+
+/** Recognize only the known append-only shapes, including their item defaults. */
+function hasKnownVanillaShape(saved) {
+    if (!isStorageRecord(saved) || !isStorageRecord(saved.item_recipe_choices)
+        || !Array.isArray(saved.scheme_for_recipe)
+        || !isStorageRecord(saved.cost_weight)
+        || !isStorageRecord(saved.cost_weight['物品额外成本'])) return false;
+    const count = saved.scheme_for_recipe.length;
+    if (count < LEGACY_VANILLA_RECIPE_COUNT || count > currentRecipeCount) return false;
+    return additions.every(({index, name}) => index < count
+        ? saved.item_recipe_choices[name] === 1 && isStorageRecord(saved.cost_weight['物品额外成本'][name])
+        : !Object.hasOwn(saved.item_recipe_choices, name) && !Object.hasOwn(saved.cost_weight['物品额外成本'], name));
+}
 
 /**
  * A deliberately narrow append-only migration, not a generic length repair.
- * The original 238 recipes (and every existing per-item choice) are unchanged.
- * The prefix's exact data/order is pinned by game-data-version.test.jsx.
+ * Both the original 238-recipe data and its 239-recipe Holo Beacon successor
+ * retain every recipe ordinal and per-item choice. Tests pin both prefixes.
  */
 export function migrateSchemeForGame(saved, game) {
-    if (game.game_name !== 'Vanilla' || game.data_revision !== VANILLA_HOLO_REVISION
-        || game.recipe_data.length !== LEGACY_VANILLA_RECIPE_COUNT + 1
-        || game.recipe_ids?.[LEGACY_VANILLA_RECIPE_COUNT] !== 161
-        || !isStorageRecord(saved) || !isStorageRecord(saved.item_recipe_choices)
-        || !Array.isArray(saved.scheme_for_recipe)
-        || saved.scheme_for_recipe.length !== LEGACY_VANILLA_RECIPE_COUNT
-        || !isStorageRecord(saved.cost_weight)
-        || !isStorageRecord(saved.cost_weight['物品额外成本'])
-        || Object.hasOwn(saved.item_recipe_choices, '全息信标')
-        || Object.hasOwn(saved.cost_weight['物品额外成本'], '全息信标')) return saved;
+    if (game.game_name !== 'Vanilla' || game.data_revision !== VANILLA_DARK_FOG_REVISION
+        || game.recipe_data.length !== currentRecipeCount
+        || additions.some(({index, id}) => game.recipe_ids?.[index] !== id)
+        || !hasKnownVanillaShape(saved)
+        || saved.scheme_for_recipe.length === currentRecipeCount) return saved;
 
     const migrated = structuredClone(saved);
-    migrated.scheme_for_recipe.push({'建筑': 0, '增产点数': 0, '增产模式': 0});
-    migrated.item_recipe_choices['全息信标'] = 1;
-    migrated.cost_weight['物品额外成本']['全息信标'] = {
-        '成本': 0, '启用': 0, '与其它成本累计': 0, '溢出时处理成本': 0,
-    };
+    for (const {index, name} of additions) {
+        if (index < saved.scheme_for_recipe.length) continue;
+        migrated.scheme_for_recipe.push({'建筑': 0, '增产点数': 0, '增产模式': 0});
+        migrated.item_recipe_choices[name] = 1;
+        migrated.cost_weight['物品额外成本'][name] = {
+            '成本': 0, '启用': 0, '与其它成本累计': 0, '溢出时处理成本': 0,
+        };
+    }
     return migrated;
 }
 
-/** Only the old Vanilla shape and its known appended successor need archival. */
+/** Archive replacements of either known old shape, including 238 → 239 saves. */
 export function isReplacedLegacyVanillaScheme(before, after) {
-    return isStorageRecord(before) && isStorageRecord(after)
-        && Array.isArray(before.scheme_for_recipe) && Array.isArray(after.scheme_for_recipe)
-        && before.scheme_for_recipe.length === LEGACY_VANILLA_RECIPE_COUNT
-        && after.scheme_for_recipe.length === LEGACY_VANILLA_RECIPE_COUNT + 1
-        && isStorageRecord(before.item_recipe_choices) && isStorageRecord(after.item_recipe_choices)
-        && !Object.hasOwn(before.item_recipe_choices, '全息信标')
-        && after.item_recipe_choices['全息信标'] === 1;
+    return hasKnownVanillaShape(before) && hasKnownVanillaShape(after)
+        && before.scheme_for_recipe.length < after.scheme_for_recipe.length;
 }

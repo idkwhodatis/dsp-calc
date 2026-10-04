@@ -10,7 +10,9 @@ export const AutoSizedInput = ({value, onChange, className, delayed, 'aria-label
     const invalid = delayed && draft !== null && !valid(draft);
 
     function commit(newValue) {
-        onChange(valid(newValue) ? newValue : value);
+        // Merely focusing a derived, rounded value must not change its owner or
+        // replace the stored precision. Invalid drafts leave the value intact.
+        if (draft !== null && valid(newValue)) onChange(newValue);
         setDraft(null);
     }
 

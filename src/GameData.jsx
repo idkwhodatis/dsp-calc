@@ -1,4 +1,4 @@
-import {VANILLA_HOLO_REVISION} from './lib/game-data-migrations.js';
+import {VANILLA_DARK_FOG_REVISION} from './lib/game-data-migrations.js';
 
 /*
     GameData数据内容说明:
@@ -91,7 +91,7 @@ export function get_mod_options() {
 
 export const default_game_data = get_game_data(["Vanilla"])
 export const vanilla_game_version = game_data_info_list[0].version;
-export const vanilla_data_description = `原版基础数据 v${vanilla_game_version}；仅原版追加已核验的 v0.10.34 全息信标，尚未完整适配 v0.10.35。模组组合仍使用各自原有数据`;
+export const vanilla_data_description = `原版基础数据 v${vanilla_game_version}；仅原版追加已核验的 v0.10.34 全息信标与 v0.10.35 黑雾引力透镜制造配方。黑雾透镜暂列「其它」，射线接收站新模式待核验，尚未完整适配 v0.10.35。模组组合仍使用各自原有数据`;
 
 var name_icon_list;
 
@@ -129,7 +129,7 @@ export function get_game_data(modList) {
     //将json转换为需要的数据结构
     data.mods = mod_names;
     data.game_name = json_file_name;
-    data.data_revision = json_file_name === 'Vanilla' ? VANILLA_HOLO_REVISION : json_file_name;
+    data.data_revision = json_file_name === 'Vanilla' ? VANILLA_DARK_FOG_REVISION : json_file_name;
     data.recipe_ids = json_data.recipes.map(recipe => recipe.ID);
     data.item_grid = {};
     data.item_icon_name = {};

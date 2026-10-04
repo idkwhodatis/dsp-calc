@@ -3,7 +3,7 @@ import {GameInfo, GlobalState} from './global_state';
 import {init_scheme_data} from './scheme_data';
 import {default_game_data, get_game_data, get_mod_options, MoreMegaStructureGUID, TheyComeFromVoidGUID} from "./GameData.jsx";
 import {backupGameDataStorage, getStorageSnapshot, readStorageObject} from "./lib/storage.js";
-import {migrateLegacyProductionSources} from './production_sources.js';
+import {migrateLegacyProductionSources, synchronizeProductionSourceRates} from './production_sources.js';
 import {normalizeSourceIds} from './lib/source-storage.js';
 import {clearPlanSources, decodeSavedPlan, isPlanOwnedSource, retireUnscopedPlanSources, settingsForAutosave, targetIdentity} from './lib/plan-state.js';
 import {migrateSchemeForGame} from './lib/game-data-migrations.js';
@@ -83,6 +83,12 @@ function restore_scheme(game_data) {
         ? saved : init_scheme_data(game_data);
 }
 
+function synchronizeSourceSettings(game_info, scheme_data, settings) {
+    if (!settings.production_sources?.some(source => source?.quantity_mode === 'buildings')) return settings;
+    const state = new GlobalState(game_info, scheme_data, settings);
+    return {...settings, production_sources: synchronizeProductionSourceRates(state)};
+}
+
 function restore_settings(game_info, scheme_data) {
     let saved;
     try { saved = readStorageObject("auto_settings"); } catch { saved = {}; }
@@ -109,7 +115,7 @@ function restore_settings(game_info, scheme_data) {
         merged.natural_production_line_backup = structuredClone(merged.natural_production_line);
         merged.natural_production_line = [];
     }
-    return retireUnscopedPlanSources(merged);
+    return synchronizeSourceSettings(game_info, scheme_data, retireUnscopedPlanSources(merged));
 }
 
 export function ContextProvider({children}) {
@@ -131,7 +137,8 @@ export function ContextProvider({children}) {
     }
     function set_settings(patch) {
         set_model(previous => ({...previous,
-            settings: {...previous.settings, ...(typeof patch === 'function' ? patch(previous.settings) : patch)}}));
+            settings: synchronizeSourceSettings(previous.game_info, previous.scheme_data,
+                {...previous.settings, ...(typeof patch === 'function' ? patch(previous.settings) : patch)})}));
     }
     function set_needs_list(next) {
         set_model(previous => {
@@ -146,17 +153,18 @@ export function ContextProvider({children}) {
             if (loaded.complete) {
                 return {...previous, needs_list: loaded.needs_list, scheme_data: loaded.scheme_data,
                     // Recovery archives are not plan data and survive an explicit load.
-                    settings: {...previous.settings, ...DEFAULT_SETTINGS, ...loaded.settings}};
+                    settings: synchronizeSourceSettings(previous.game_info, loaded.scheme_data,
+                        {...previous.settings, ...DEFAULT_SETTINGS, ...loaded.settings})};
             }
             if (kind === 'needs') return {...previous, needs_list: loaded.needs_list, settings: clearPlanSources(previous.settings)};
             const restored = retireUnscopedPlanSources({
                 ...previous.settings, production_sources: loaded.production_sources, natural_production_line: [],
             });
-            return {...previous, scheme_data: loaded.scheme_data, settings: {...restored,
+            return {...previous, scheme_data: loaded.scheme_data, settings: synchronizeSourceSettings(previous.game_info, loaded.scheme_data, {...restored,
                 production_sources: normalizeSourceIds([
                     ...(previous.settings.production_sources || []).filter(isPlanOwnedSource), ...restored.production_sources,
                 ]),
-            }};
+            })};
         });
     }
     const [compact_mode, set_compact_mode] = useState(() => get_compact_mode(window.innerWidth));
