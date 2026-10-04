@@ -1,11 +1,15 @@
-import {useContext, useMemo, useState, useEffect, useRef} from 'react';
-import {createPortal} from 'react-dom';
-import {Modal} from 'bootstrap';
+import {useContext, useMemo, useState, useEffect} from 'react';
 import {CompactModeContext, GlobalStateContext, SchemeDataSetterContext, SettingsSetterContext} from './contexts';
 import {ItemIcon} from './icon';
 import {NplRows} from './natural_production_line';
 import {HorizontalMultiButtonSelect, Recipe} from './recipe';
 import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
+import {Button} from './components/ui/button';
+import {Badge} from './components/ui/badge';
+import {Card, CardContent, CardHeader, CardTitle} from './components/ui/card';
+import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle} from './components/ui/dialog';
+import {Tooltip, TooltipContent, TooltipTrigger} from './components/ui/tooltip';
+import {cn} from './lib/utils';
 
 const ValueWithDifference = ({currentValue, previousValue}) => {
     const global_state = useContext(GlobalStateContext);
@@ -21,13 +25,11 @@ const ValueWithDifference = ({currentValue, previousValue}) => {
     const diff = currentValue - previousValue;
     const diffSign = diff > 0 ? '+' : '';
 
-    // 根据差值正负设置颜色
-    const color = diff > 0 ? 'red' : 'green';
 
     return (
         <>
             {currentValue.toFixed(fixedNum)}
-            <span className="text-xs align-sub" style={{ fontSize: '0.7em', verticalAlign: 'sub', color: color, opacity: '0.5', marginLeft: '2px', marginRight: '2px' }}>
+            <span className={cn("ml-1 align-sub text-[10px]", diff > 0 ? "text-rose-500" : "text-emerald-600")}>
                 {diffSign}{diff.toFixed(fixedNum)}
             </span>
         </>
@@ -36,29 +38,44 @@ const ValueWithDifference = ({currentValue, previousValue}) => {
 
 export function RecipeSelect({item, choice, onChange, compact}) {
     const global_state = useContext(GlobalStateContext);
-
-    let game_data = global_state.game_data;
-    let item_data = global_state.item_data;
-
-    if (item_data[item].length == 2) {
-        let recipe_index = item_data[item][1];
-        let recipe = game_data.recipe_data[recipe_index];
-        return <div className="my-1 px-2 py-1"><Recipe recipe={recipe} compact={compact}/></div>
-    } else {
-        let doms = [];
-        for (let i = 1; i < item_data[item].length; i++) {
-            let recipe_index = item_data[item][i];
-            let recipe = game_data.recipe_data[recipe_index];
-            let bg_class = (i == choice) ? "selected" : "";
-            doms.push(<a key={i}
-                         className={`recipe-item px-2 py-1 d-block text-decoration-none text-reset cursor-pointer ${bg_class}`}
-                         onClick={() => onChange(i)}>
-                <Recipe recipe={recipe} compact={compact}/>
-            </a>);
-        }
-
-        return <div className="border-recipe-item">{doms}</div>;
+    const {game_data, item_data} = global_state;
+    if (item_data[item].length === 2) {
+        return <div className="px-2 py-1.5"><Recipe recipe={game_data.recipe_data[item_data[item][1]]} compact={compact}/></div>;
     }
+    return <div className="dsp-recipe-options flex min-w-24 flex-col gap-0.5 rounded-lg border bg-muted/30 p-0.5" role="group" aria-label={`${item}配方`}>
+        {item_data[item].slice(1).map((recipe_index, index) => {
+            const value = index + 1;
+            return <Button key={recipe_index} type="button" variant="ghost" size="sm"
+                aria-label={`${item}配方 ${value}`} aria-pressed={choice == value}
+                className={cn("h-auto min-h-8 justify-start rounded-md px-2 py-1.5", choice == value && "bg-background shadow-sm ring-1 ring-border hover:bg-background")}
+                onClick={() => onChange(value)}>
+                <Recipe recipe={game_data.recipe_data[recipe_index]} compact={compact}/>
+            </Button>;
+        })}
+    </div>;
+}
+
+function RatioAdjustInput({value, fixed_num, needs_list, set_needs_list, label}) {
+    const disp_value = value.toFixed(fixed_num);
+    const base_value = +disp_value;
+    function set_needs_in_row(e_or_value) {
+        if (base_value != 0) {
+            const new_value = e_or_value.target ? e_or_value.target.value : e_or_value;
+            const new_needs_list = {};
+            for (const item in needs_list) {
+                new_needs_list[item] = needs_list[item] * new_value / base_value;
+            }
+            set_needs_list(new_needs_list);
+        }
+    }
+    return <Tooltip>
+        <TooltipTrigger asChild>
+            <span className="inline-flex">
+                <AutoSizedInput delayed value={disp_value} onChange={set_needs_in_row} aria-label={label}/>
+            </span>
+        </TooltipTrigger>
+        <TooltipContent>等比例调整所有需求</TooltipContent>
+    </Tooltip>;
 }
 
 export function ProNumSelect({choice, onChange, icon_size}) {
@@ -167,62 +184,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     const compact_mode = useContext(CompactModeContext);
     const is_compact = compact_mode !== "full";
     const is_mobile = compact_mode === "mobile";
-    const mob_icon = is_mobile ? 20 : undefined;   // 总结面板/主图标
 
-    // Refs for Bootstrap Modal instances
-    const ore_modal_ref = useRef(null);
-    const ore_modal_instance = useRef(null);
-    const building_modal_ref = useRef(null);
-    const building_modal_instance = useRef(null);
-
-    // Initialize Bootstrap Modal instances
-    useEffect(() => {
-        if (ore_modal_ref.current) {
-            ore_modal_instance.current = new Modal(ore_modal_ref.current);
-            ore_modal_ref.current.addEventListener('hidden.bs.modal', () => {
-                set_show_ore_popup(false);
-            });
-        }
-    }, [ore_modal_ref]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    useEffect(() => {
-        if (building_modal_ref.current) {
-            building_modal_instance.current = new Modal(building_modal_ref.current);
-            building_modal_ref.current.addEventListener('hidden.bs.modal', () => {
-                set_show_building_popup(false);
-            });
-        }
-    }, [building_modal_ref]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Show/hide Modal A based on show_ore_popup prop
-    useEffect(() => {
-        if (!ore_modal_instance.current) return;
-        if (show_ore_popup) {
-            ore_modal_instance.current.show();
-        } else {
-            ore_modal_instance.current.hide();
-        }
-    }, [show_ore_popup]);
-
-    // Show/hide Modal B based on show_building_popup prop
-    useEffect(() => {
-        if (!building_modal_instance.current) return;
-        if (show_building_popup) {
-            building_modal_instance.current.show();
-        } else {
-            building_modal_instance.current.hide();
-        }
-    }, [show_building_popup]);
-
-    // Auto-close both modals when exiting narrow/mobile mode
-    useEffect(() => {
-        if (compact_mode !== "narrow" && compact_mode !== "mobile") {
-            set_show_ore_popup(false);
-            set_show_building_popup(false);
-        }
-    }, [compact_mode, set_show_ore_popup, set_show_building_popup]);
     const mob_btn_icon = is_mobile ? 18 : undefined; // 表格内按钮图标
-    // const [result_dict, set_result_dict] = useState(global_state.calculate());
     let game_data = global_state.game_data;
     let scheme_data = global_state.scheme_data;
     let settings = global_state.settings;
@@ -233,12 +196,9 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     // TODO refactor to a simple list
     let mineralize_list = settings.mineralize_list;
     let natural_production_line = settings.natural_production_line;
-    console.log("result natural_production_line", natural_production_line);
 
     const [result_dict, lp_surplus_list] = useMemo(() => {
-        console.log("CALCULATING");
         const res = global_state.calculate(needs_list);
-        console.log("lp_surplus_list", res[1]);
         return res;
     }, [global_state, needs_list]);
 
@@ -317,7 +277,6 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         // editing item_graph!
         item_graph[item]["原料"] = {};
 
-        console.log("mineralize_list", new_mineralize_list);
         set_settings({"mineralize_list": new_mineralize_list});
     }
 
@@ -338,7 +297,9 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     }
 
     let mineralize_doms = Object.keys(mineralize_list).map(item => (
-        <a key={item} className="m-1 cursor-pointer" onClick={() => unmineralize(item)}><ItemIcon item={item} size={mob_icon}/></a>
+        <Button key={item} type="button" variant="outline" size="sm" className="h-auto gap-1.5 px-2 py-1" aria-label={`恢复${item}生产`} onClick={() => unmineralize(item)}>
+            <ItemIcon item={item} size={24}/><span className="text-xs">{item}</span><span aria-hidden="true" className="text-muted-foreground">×</span>
+        </Button>
     ));
 
     let result_table_rows = [];
@@ -352,12 +313,12 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         }
         let factory_number = get_factory_number(result_dict[i], i);
         let from_side_products = Object.entries(side_products[i]).map(([from, amount]) =>
-            <div key={from} className="text-nowrap">+{amount.toFixed(fixed_num)} (<ItemIcon item={from} size={is_mobile ? 18 : 26}/>)
+            <div key={from} className="mt-1 flex items-center justify-end gap-1 whitespace-nowrap text-[11px] text-muted-foreground">+{amount.toFixed(fixed_num)} (<ItemIcon item={from} size={is_mobile ? 18 : 22}/>)
             </div>
         );
         let factory_name = game_data.factory_data[game_data.recipe_data[recipe_id]["设施"]][scheme_data.scheme_for_recipe[recipe_id]["建筑"]]["名称"];
         let is_mineralized = i in mineralize_list;
-        let row_class = is_mineralized ? "table-secondary" : "";
+        let row_class = is_mineralized ? "bg-muted/60" : "";
 
         const change_recipe = (value) => {
             set_scheme_data(old_scheme_data => {
@@ -391,83 +352,35 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
             })
         };
 
-        const RatioAdjustInput = ({value}) => {
-            let disp_value = value.toFixed(fixed_num);
-            let base_value = +disp_value;
-
-            function set_needs_in_row() {
-                return function (e_or_value) {
-                    // Either an event [e] or a raw [value] is supported
-                    if (base_value != 0) {
-                        let new_value = e_or_value.target ? e_or_value.target.value : e_or_value;
-                        let new_needs_list = {};
-                        for (let i in needs_list) {
-                            new_needs_list[i] = needs_list[i] * new_value / base_value;
-                        }
-                        set_needs_list(new_needs_list);
-                    }
-                }
-            }
-
-            return <span data-tooltip="等比例调整需求" className="fast-tooltip">
-                <AutoSizedInput
-                    delayed={true}
-                    value={disp_value}
-                    onChange={set_needs_in_row()}/>
-            </span>;
-        };
-
-        result_table_rows.push(<tr className={row_class} key={i}>
-            {/* 操作 */}
-            <td>
-                {is_mineralized ?
-                    <button className="btn btn-sm btn-outline-primary ssmall text-nowrap mineralize-btn"
-                            onClick={() => unmineralize(i)}>恢复</button> :
-                    <button className="btn btn-sm btn-outline-primary ssmall text-nowrap mineralize-btn"
-                            onClick={() => mineralize(i)}>
-                        <div>视为</div>
-                        <div>原矿</div>
-                    </button>
-                }
+        const ratioProps = {fixed_num, needs_list, set_needs_list};
+        result_table_rows.push(<tr className={cn("border-b last:border-0 transition-colors hover:bg-muted/40", row_class)} key={i}>
+            <td className="px-3 py-3">
+                <Button type="button" variant="ghost" size="sm" className="h-7 whitespace-nowrap px-2 text-xs text-muted-foreground"
+                    aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
+                    onClick={() => is_mineralized ? unmineralize(i) : mineralize(i)}>
+                    {is_mineralized ? '恢复' : '原矿化'}
+                </Button>
             </td>
-            {/* 目标物品 */}
-            <td>
-                <div className="d-flex align-items-center text-nowrap">
-                    <ItemIcon item={i} tooltip={is_compact} size={mob_icon}/>
-                    <small className="ms-1 item-name-text">{i}</small>
+            <td className="px-3 py-3">
+                <div className="flex items-center gap-2 whitespace-nowrap">
+                    <ItemIcon item={i} tooltip={is_compact} size={is_mobile ? 24 : 32}/>
+                    <span className="dsp-item-name text-xs font-medium">{i}</span>
                 </div>
             </td>
-            {/* 分钟毛产出 */}
-            <td className="text-center">
-                <RatioAdjustInput value={get_gross_output(result_dict[i], i)}/>
+            <td className="px-3 py-3 text-right">
+                <RatioAdjustInput value={get_gross_output(result_dict[i], i)} {...ratioProps} label={`${i}产能，等比例调整需求`}/>
                 {from_side_products}
             </td>
-            {/* 所需工厂*数目 */}
-            <td className="text-nowrap">
-                {is_mineralized ||
-                    <>
-                        <div className="d-inline-flex align-items-center gap-1">
-                            <ItemIcon item={factory_name} size={is_mobile ? 18 : 30}/>
-                            <RatioAdjustInput value={factory_number}/>
-                        </div>
-                    </>
-                }
+            <td className="px-3 py-3 whitespace-nowrap">
+                {!is_mineralized ? <div className="inline-flex items-center gap-1.5">
+                    <ItemIcon item={factory_name} size={is_mobile ? 20 : 26}/>
+                    <RatioAdjustInput value={factory_number} {...ratioProps} label={`${i}工厂数量，等比例调整需求`}/>
+                </div> : <span className="text-muted-foreground">—</span>}
             </td>
-            {/* 所选配方 */}
-            <td><RecipeSelect item={i} onChange={change_recipe}
-                              choice={scheme_data.item_recipe_choices[i]}
-                              compact={compact_mode}/></td>
-            {/* 所选增产模式 */}
-            <td><ProModeSelect recipe_id={recipe_id} onChange={change_pro_mode}
-                               choice={scheme_data.scheme_for_recipe[recipe_id]["增产模式"]}/></td>
-            {/* 所选增产剂 */}
-            <td><ProNumSelect onChange={change_pro_num}
-                              choice={scheme_data.scheme_for_recipe[recipe_id]["增产点数"]}
-                              icon_size={mob_btn_icon}/></td>
-            {/* 所选工厂种类 */}
-            <td><FactorySelect recipe_id={recipe_id} onChange={change_factory}
-                               choice={scheme_data.scheme_for_recipe[recipe_id]["建筑"]}
-                               icon_size={mob_btn_icon}/></td>
+            <td className="px-3 py-3"><RecipeSelect item={i} onChange={change_recipe} choice={scheme_data.item_recipe_choices[i]} compact={compact_mode}/></td>
+            <td className="px-3 py-3"><ProModeSelect recipe_id={recipe_id} onChange={change_pro_mode} choice={scheme_data.scheme_for_recipe[recipe_id]["增产模式"]}/></td>
+            <td className="px-3 py-3"><ProNumSelect onChange={change_pro_num} choice={scheme_data.scheme_for_recipe[recipe_id]["增产点数"]} icon_size={mob_btn_icon}/></td>
+            <td className="px-3 py-3"><FactorySelect recipe_id={recipe_id} onChange={change_factory} choice={scheme_data.scheme_for_recipe[recipe_id]["建筑"]} icon_size={mob_btn_icon}/></td>
         </tr>);
     }
 
@@ -494,15 +407,11 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         }
     }
 
-    let building_rows = Object.entries(building_list).map(([building, count]) => (
-        <tr key={building}>
-            <td className="d-flex align-items-center text-nowrap">
-                <span className="ms-auto me-1 compact-hide-text">{building}</span>
-                <ItemIcon item={building} tooltip={false} size={mob_icon}/>
-            </td>
-            <td className="ps-2 text-nowrap">
-              {'x '}
-              <ValueWithDifference currentValue={count} previousValue={historyValues?.[1]?.buildingCounts?.[building]}/>
+    const building_rows = Object.entries(building_list).map(([building, count]) => (
+        <tr key={building} className="border-b last:border-0">
+            <td className="py-2"><span className="flex items-center gap-2 text-xs"><ItemIcon item={building} tooltip={false} size={26}/>{building}</span></td>
+            <td className="py-2 pl-4 text-right text-xs whitespace-nowrap tabular-nums">
+                <ValueWithDifference currentValue={count} previousValue={historyValues?.[1]?.buildingCounts?.[building]}/>
             </td>
         </tr>));
 
@@ -514,16 +423,12 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         })
     }
 
-    let surplus_doms = Object.entries(lp_surplus_list).map(([item, quant]) =>
-        (<div key={item} className="text-nowrap d-flex align-items-center">
-            <ItemIcon item={item}/>
-            <span className="ms-1">x{quant.toFixed(fixed_num)}</span>
-            <button className="ms-2 btn btn-outline-primary ssmall text-nowrap mineralize-btn"
-                    onClick={() => IncreaseCostWhenSurplus(item)}>
-                <div>避免</div>
-                <div>溢出</div>
-            </button>
-        </div>));
+    const surplus_doms = Object.entries(lp_surplus_list).map(([item, quant]) =>
+        <div key={item} className="flex items-center gap-2 rounded-lg border bg-muted/30 p-2">
+            <ItemIcon item={item} size={28}/>
+            <div className="min-w-0 flex-1"><p className="text-xs font-medium">{item}</p><p className="text-xs tabular-nums text-muted-foreground">{quant.toFixed(fixed_num)} / {time_tick === 60 ? 'min' : 's'}</p></div>
+            <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" aria-label={`避免${item}溢出`} onClick={() => IncreaseCostWhenSurplus(item)}>避免溢出</Button>
+        </div>);
 
     const isRawMaterial = (item) => {
         // 判断物品是否为原矿：1. 在原矿化列表中，或 2. 配方没有输入需求且输出产物只有一种
@@ -566,242 +471,95 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [result_dict, energy_cost, miner_energy_cost, building_list]);
 
-    return <div className="result-container">
-        {/* 左侧：结果表格独立滚动区域 */}
-        <div className="result-table-scroll">
-        <table className="table table-sm align-middle w-auto result-table">
-            <thead>
-            <tr className="text-center text-nowrap">
-                <th width={60}>操作</th>
-                <th width={140}>物品</th>
-                <th width={130}>产能</th>
-                <th width={110}>工厂</th>
-                <th width={300}>配方选取</th>
-                <th width={180}>增产模式</th>
-                <th width={160}>增产剂</th>
-                <th width={170}>工厂类型</th>
-            </tr>
-            </thead>
-            <tbody className="table-group-divider">
-            <NplRows/>
-            {result_table_rows}
-            </tbody>
-        </table>
-        </div>
-        {/* 右侧：总结面板独立滚动区域 */}
-        <div className="result-summary-scroll">
-        {compact_mode !== "narrow" && compact_mode !== "mobile" &&
-        <div className="d-flex flex-column gap-2 summary-panel-content">
+    const rawMaterials = Object.entries(result_dict).filter(([item]) => isRawMaterial(item));
+    const totalBuildings = Object.values(building_list).reduce((sum, count) => sum + count, 0);
+    const unit = time_tick === 60 ? 'min' : 's';
+    const rawMaterialCard = <Card className="gap-0 py-0 shadow-none">
+        <CardHeader className="px-4 pt-4 pb-2"><CardTitle className="text-sm">原矿输入总需求</CardTitle></CardHeader>
+        <CardContent className="px-4 pb-3">
+            {rawMaterials.length > 0 ? <table className="w-full"><tbody>
+                {rawMaterials.map(([item, amount]) => <tr key={item} className="border-b last:border-0">
+                    <td className="py-2"><span className="flex items-center gap-2 text-xs"><ItemIcon item={item} tooltip={false} size={26}/>{item}</span></td>
+                    <td className="py-2 pl-3 text-right text-xs whitespace-nowrap tabular-nums">
+                        <ValueWithDifference currentValue={amount} previousValue={historyValues?.[1]?.rawMaterials?.[item]}/><span className="ml-0.5 text-muted-foreground">/{unit}</span>
+                    </td>
+                </tr>)}
+            </tbody></table> : <p className="py-2 text-xs text-muted-foreground">暂无原矿需求</p>}
+        </CardContent>
+    </Card>;
+    const buildingCard = <Card className="gap-0 py-0 shadow-none">
+        <CardHeader className="flex-row items-center justify-between px-4 pt-4 pb-2"><CardTitle className="text-sm">建筑统计</CardTitle><Badge variant="secondary" className="tabular-nums">{totalBuildings}</Badge></CardHeader>
+        <CardContent className="px-4 pb-3">
+            {building_rows.length > 0 ? <table className="w-full"><tbody>{building_rows}</tbody></table> : <p className="py-2 text-xs text-muted-foreground">暂无建筑需求</p>}
+        </CardContent>
+    </Card>;
+    const energyCard = <Card className="gap-0 py-0 shadow-none">
+        <CardHeader className="px-4 pt-4 pb-3"><CardTitle className="text-sm">预估电力</CardTitle></CardHeader>
+        <CardContent className="space-y-2 px-4 pb-4">
+            <div className="flex items-center justify-between gap-3 text-xs"><span className="text-muted-foreground">生产设施</span><span className="tabular-nums"><ValueWithDifference currentValue={energy_cost} previousValue={historyValues?.[1]?.energyCost}/> MW</span></div>
+            <div className="flex items-center justify-between gap-3 text-xs"><span className="text-muted-foreground">含采集设备</span><span className="font-medium tabular-nums"><ValueWithDifference currentValue={energy_cost + miner_energy_cost} previousValue={historyValues?.[1]?.totalEnergyCost}/> MW</span></div>
+        </CardContent>
+    </Card>;
+    const mineralizedCard = <Card className="gap-0 py-0 shadow-none">
+        <CardHeader className="flex-row items-center justify-between px-4 pt-4 pb-3"><CardTitle className="text-sm">原矿化列表</CardTitle>
+            {mineralize_doms.length > 0 && <Button type="button" variant="ghost" size="sm" className="h-6 px-1 text-xs text-muted-foreground" onClick={clear_mineralize_list}>清空</Button>}
+        </CardHeader>
+        <CardContent className="px-4 pb-4">{mineralize_doms.length > 0 ? <div className="flex flex-wrap gap-1.5">{mineralize_doms}</div> : <p className="text-xs text-muted-foreground">将物品视为原矿，直接从生产链外部供给</p>}</CardContent>
+    </Card>;
+    const surplusCard = <Card className="gap-0 py-0 shadow-none">
+        <CardHeader className="px-4 pt-4 pb-3"><CardTitle className="text-sm">多余产物</CardTitle></CardHeader>
+        <CardContent className="space-y-2 px-4 pb-4">{surplus_doms.length > 0 ? surplus_doms : <p className="text-xs text-muted-foreground">没有多余产物</p>}</CardContent>
+    </Card>;
 
-            {/* 第一列：原矿化列表 + 多余产物（mobile 时还包含预估电力） */}
-            <div className="d-flex flex-column gap-2 summary-col-1">
-                {mineralize_doms.length > 0 &&
-                    <fieldset className="w-fit">
-                        <legend><small>原矿化列表</small></legend>
-                        <div className="d-flex flex-wrap align-items-center">
-                            {mineralize_doms}
-                            <button className="ms-2 btn btn-sm btn-outline-danger text-nowrap"
-                                    onClick={clear_mineralize_list}>清空
-                            </button>
-                        </div>
-                    </fieldset>
-                }
-
-                {surplus_doms.length > 0 &&
-                    <fieldset className="w-fit">
-                        <legend><small>多余产物</small></legend>
-                        {surplus_doms}
-                    </fieldset>}
-
-                {/* 预估电力：仅 mobile 布局时显示在第一列 */}
-                {is_mobile && building_rows.length > 0 &&
-                    <span className="d-inline-flex gap-1 text-nowrap energy-cost-display">
-                        <span className="me-1">预估电力<span className="energy-cost-unit-inline"> (MW)</span></span>
-                        <span className="fast-tooltip" data-tooltip="不包含采集设备">
-                            <ValueWithDifference
-                                currentValue={energy_cost}
-                                previousValue={historyValues?.[1]?.energyCost}
-                                key="energy-cost"
-                            />
-                        </span><span className="energy-cost-separator">/</span>
-                        <span className="fast-tooltip" data-tooltip="包含采集设备">
-                            <ValueWithDifference
-                                currentValue={energy_cost + miner_energy_cost}
-                                previousValue={historyValues?.[1]?.totalEnergyCost}
-                                key="total-energy-cost"
-                            />
-                        </span>
-                        <span className="energy-cost-unit-trailing">MW</span>
-                    </span>}
+    return <section className="dsp-result space-y-4" aria-labelledby="production-heading">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+            <div><p className="mb-1 text-[11px] font-medium tracking-widest text-muted-foreground uppercase">Production overview</p><h2 id="production-heading" className="text-xl font-semibold tracking-tight">生产总览</h2></div>
+            <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="font-normal">{result_table_rows.length} 项物品 · 每{time_tick === 60 ? '分钟' : '秒'}</Badge>
+                <Button type="button" variant="outline" size="sm" onClick={() => set_show_ore_popup(true)}>原矿与溢出</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => set_show_building_popup(true)}>建筑与需求</Button>
             </div>
-
-            {/* 原矿输入总需求 */}
-            {(() => {
-                const rawMaterials = Object.entries(result_dict).filter(([item]) => isRawMaterial(item));
-                return rawMaterials.length > 0 && (
-                    <fieldset className="w-fit">
-                        <legend><small>原矿输入总需求</small></legend>
-                        <table>
-                            <tbody>
-                                {rawMaterials.map(([item, amount]) => (
-                                    <tr key={item}>
-                                        <td className="d-flex align-items-center text-nowrap">
-                                            <span className="ms-auto me-1 compact-hide-text">{item}</span>
-                                            <ItemIcon item={item} tooltip={false} size={mob_icon}/>
-                                        </td>
-                                        <td className="ps-2 text-nowrap">
-                                            {'x '}
-                                            <ValueWithDifference
-                                                currentValue={amount}
-                                                previousValue={historyValues?.[1]?.rawMaterials?.[item]}
-                                                key={`raw-material-${item}`}
-                                            />/{time_tick === 60 ? 'min' : 'sec'}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </fieldset>
-                );
-            })()}
-
-            {/* 建筑统计 */}
-            {building_rows.length > 0 &&
-                <fieldset className="w-fit">
-                    <legend><small>建筑统计</small></legend>
-                    <table>
-                        <tbody>{building_rows}</tbody>
+        </div>
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_290px]">
+            <Card className="min-w-0 gap-0 overflow-hidden py-0 shadow-none">
+                <p className="border-b bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground lg:hidden">左右滑动表格，查看配方与生产设置</p>
+                <div className="dsp-result-table-scroll w-full overflow-auto" tabIndex={0} role="region" aria-label="生产结果表，可横向滚动">
+                    <table className="dsp-production-table w-full border-collapse text-sm">
+                        <caption className="sr-only">生产链计算结果：产能、工厂、配方和增产设置</caption>
+                        <thead className="border-b bg-muted/40">
+                            <tr className="text-left text-[11px] whitespace-nowrap text-muted-foreground">
+                                <th scope="col" className="px-3 py-3 font-medium">操作</th><th scope="col" className="px-3 py-3 font-medium">物品</th>
+                                <th scope="col" className="px-3 py-3 text-right font-medium">产能 / {unit}</th><th scope="col" className="px-3 py-3 font-medium">工厂数量</th>
+                                <th scope="col" className="px-3 py-3 font-medium">配方选取</th><th scope="col" className="px-3 py-3 font-medium">增产模式</th>
+                                <th scope="col" className="px-3 py-3 font-medium">增产剂</th><th scope="col" className="px-3 py-3 font-medium">工厂类型</th>
+                            </tr>
+                        </thead>
+                        <tbody><NplRows/>{result_table_rows}
+                            {result_table_rows.length === 0 && natural_production_line.length === 0 && <tr><td colSpan={8} className="px-6 py-20 text-center">
+                                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl border bg-muted/40 text-lg text-muted-foreground" aria-hidden="true">＋</div>
+                                <p className="text-sm font-medium">开始规划你的生产线</p><p className="mt-1.5 text-xs text-muted-foreground">添加目标物品与需求数量，查看完整的生产链与建筑需求</p>
+                            </td></tr>}
+                        </tbody>
                     </table>
-                </fieldset>}
-
-            {/* 预估电力：非 mobile 布局时显示在最下方 */}
-            {!is_mobile && building_rows.length > 0 &&
-                <span className="d-inline-flex gap-1 text-nowrap energy-cost-display">
-                    <span className="me-1">预估电力<span className="energy-cost-unit-inline"> (MW)</span></span>
-                    <span className="fast-tooltip" data-tooltip="不包含采集设备">
-                        <ValueWithDifference
-                            currentValue={energy_cost}
-                            previousValue={historyValues?.[1]?.energyCost}
-                            key="energy-cost"
-                        />
-                    </span><span className="energy-cost-separator">/</span>
-                    <span className="fast-tooltip" data-tooltip="包含采集设备">
-                        <ValueWithDifference
-                            currentValue={energy_cost + miner_energy_cost}
-                            previousValue={historyValues?.[1]?.totalEnergyCost}
-                            key="total-energy-cost"
-                        />
-                    </span>
-                    <span className="energy-cost-unit-trailing">MW</span>
-                </span>}
-        </div>}
+                </div>
+            </Card>
+            <aside className="dsp-result-summary grid content-start gap-3 sm:grid-cols-2 2xl:grid-cols-1" aria-label="生产统计">
+                {energyCard}{rawMaterialCard}{buildingCard}
+                {mineralize_doms.length > 0 && mineralizedCard}
+                {surplus_doms.length > 0 && surplusCard}
+            </aside>
         </div>
-
-        {/* Modal A: 原矿化列表 + 多余产物 */}
-        {createPortal(
-            <div ref={ore_modal_ref} className="modal" tabIndex="-1">
-                <div className="modal-dialog mw-fit">
-                    <div className="modal-content bg-body flex-column" style={{"--bs-bg-opacity": 0.85}}>
-                        <div className="modal-header border-secondary">
-                            <h6 className="modal-title">原矿 &amp; 多余产物</h6>
-                            <button type="button" className="btn-close" data-bs-dismiss="modal"/>
-                        </div>
-                        <div className="modal-body summary-modal-body">
-                            {mineralize_doms.length > 0 &&
-                                <fieldset className="w-fit">
-                                    <legend><small>原矿化列表</small></legend>
-                                    <div className="d-flex flex-wrap align-items-center">
-                                        {mineralize_doms}
-                                        <button className="ms-2 btn btn-sm btn-outline-danger text-nowrap"
-                                                onClick={clear_mineralize_list}>清空
-                                        </button>
-                                    </div>
-                                </fieldset>
-                            }
-                            {surplus_doms.length > 0 &&
-                                <fieldset className="w-fit">
-                                    <legend><small>多余产物</small></legend>
-                                    {surplus_doms}
-                                </fieldset>}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            , document.body)}
-
-        {/* Modal B: 原矿输入总需求 + 建筑统计 + 预估电力 */}
-        {createPortal(
-            <div ref={building_modal_ref} className="modal" tabIndex="-1">
-                <div className="modal-dialog mw-fit">
-                    <div className="modal-content bg-body flex-column" style={{"--bs-bg-opacity": 0.85}}>
-                        <div className="modal-header border-secondary">
-                            <h6 className="modal-title">建筑 &amp; 需求</h6>
-                            <button type="button" className="btn-close" data-bs-dismiss="modal"/>
-                        </div>
-                        <div className="modal-body summary-modal-body">
-                            {/* 原矿输入总需求 */}
-                            {(() => {
-                                const rawMaterials = Object.entries(result_dict).filter(([item]) => isRawMaterial(item));
-                                return rawMaterials.length > 0 && (
-                                    <fieldset className="w-fit">
-                                        <legend><small>原矿输入总需求</small></legend>
-                                        <table>
-                                            <tbody>
-                                                {rawMaterials.map(([item, amount]) => (
-                                                    <tr key={item}>
-                                                        <td className="d-flex align-items-center text-nowrap">
-                                                            <span className="ms-auto me-1 compact-hide-text">{item}</span>
-                                                            <ItemIcon item={item} tooltip={false} size={mob_icon}/>
-                                                        </td>
-                                                        <td className="ps-2 text-nowrap">
-                                                            {'x '}
-                                                            <ValueWithDifference
-                                                                currentValue={amount}
-                                                                previousValue={historyValues?.[1]?.rawMaterials?.[item]}
-                                                                key={`raw-material-${item}`}
-                                                            />/{time_tick === 60 ? 'min' : 'sec'}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </fieldset>
-                                );
-                            })()}
-                            {/* 建筑统计 */}
-                            {building_rows.length > 0 &&
-                                <fieldset className="w-fit">
-                                    <legend><small>建筑统计</small></legend>
-                                    <table>
-                                        <tbody>{building_rows}</tbody>
-                                    </table>
-                                </fieldset>}
-                        </div>
-                        {/* 预估电力 — 固定在底部 */}
-                        {building_rows.length > 0 &&
-                            <div className="modal-footer border-secondary justify-content-start">
-                                <span className="d-inline-flex gap-1 text-nowrap energy-cost-display">
-                                    <span className="me-1">预估电力<span className="energy-cost-unit-inline"> (MW)</span></span>
-                                    <span className="fast-tooltip" data-tooltip="不包含采集设备">
-                                        <ValueWithDifference
-                                            currentValue={energy_cost}
-                                            previousValue={historyValues?.[1]?.energyCost}
-                                            key="energy-cost"
-                                        />
-                                    </span><span className="energy-cost-separator">/</span>
-                                    <span className="fast-tooltip" data-tooltip="包含采集设备">
-                                        <ValueWithDifference
-                                            currentValue={energy_cost + miner_energy_cost}
-                                            previousValue={historyValues?.[1]?.totalEnergyCost}
-                                            key="total-energy-cost"
-                                        />
-                                    </span>
-                                    <span className="energy-cost-unit-trailing">MW</span>
-                                </span>
-                            </div>}
-                    </div>
-                </div>
-            </div>
-            , document.body)}
-    </div>;
+        <Dialog open={show_ore_popup} onOpenChange={set_show_ore_popup}>
+            <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+                <DialogHeader><DialogTitle>原矿与多余产物</DialogTitle><DialogDescription>管理外部供给，调整多余产物的处理成本</DialogDescription></DialogHeader>
+                <div className="space-y-3">{mineralizedCard}{surplusCard}</div>
+            </DialogContent>
+        </Dialog>
+        <Dialog open={show_building_popup} onOpenChange={set_show_building_popup}>
+            <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+                <DialogHeader><DialogTitle>建筑与需求</DialogTitle><DialogDescription>原矿需求、建筑数量与预估电力。角标表示与上次计算的差值</DialogDescription></DialogHeader>
+                <div className="space-y-3">{energyCard}{rawMaterialCard}{buildingCard}</div>
+            </DialogContent>
+        </Dialog>
+    </section>;
 }

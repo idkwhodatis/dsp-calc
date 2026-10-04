@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import {existsSync, lstatSync, readdirSync} from 'fs';
 import fsp from 'fs/promises';
 import {createRequire} from 'module';
@@ -179,29 +180,31 @@ function pwaStubPlugin() {
     };
 }
 
-// https://vitejs.dev/config/
+// configure-pages returns either "/repository" or "" (root/custom domain).
+// Keep one trailing slash for assets, the manifest and service-worker scope.
+export function normalizeBase(value = '/') {
+    if (value === '.' || value === './') return './';
+    return `/${value.replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\//, '/');
+}
+const base = is_tauri_build ? './' : normalizeBase(process.env.VITE_BASE_PATH);
+const cacheSuffix = base.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+// https://vite.dev/config/
 export default defineConfig(({mode}) => ({
-    base: "./",
+    base,
     define: {
         'import.meta.env.VITE_APP_VERSION': JSON.stringify(require('./package.json').version),
     },
     resolve: {
         alias: {
-            '~bootstrap': path.resolve(__dirname, 'node_modules/bootstrap'),
+            '@': path.resolve(__dirname, './src'),
         }
     },
-    css: {
-        preprocessorOptions: {
-            scss: {
-                silenceDeprecations: [
-                    'import',
-                    'global-builtin',
-                    'color-functions',
-                    'if-function',
-                ],
-                quietDeps: true,
-            },
-        },
+    test: {
+        environment: 'jsdom',
+        setupFiles: ['./tests/setup.js'],
+        include: ['tests/**/*.test.{js,jsx,ts,tsx}'],
+        clearMocks: true,
     },
     build: {
         chunkSizeWarningLimit: 1800,
@@ -211,12 +214,6 @@ export default defineConfig(({mode}) => ({
                     if (id.includes('node_modules')) {
                         if (id.includes('react-dom') || id.includes('/react/') || id.includes('/scheduler/')) {
                             return 'vendor-react';
-                        }
-                        if (id.includes('/antd/') || id.includes('/@ant-design/') || id.includes('/rc-')) {
-                            return 'vendor-antd';
-                        }
-                        if (id.includes('/bootstrap/') || id.includes('/react-bootstrap/') || id.includes('/@popperjs/')) {
-                            return 'vendor-bootstrap';
                         }
                         if (id.includes('/pinyin-pro/')) {
                             return 'vendor-pinyin';
@@ -238,21 +235,26 @@ export default defineConfig(({mode}) => ({
     },
     plugins: [
         react(),
-        ...get_sprite_plugins(mode),
-        ...(!is_tauri_build ? [legacy({
+        tailwindcss(),
+        ...(mode === 'test' ? [] : get_sprite_plugins(mode)),
+        ...(!is_tauri_build && mode !== 'test' ? [legacy({
             targets: ['edge>=79', 'firefox>=67', 'chrome>=64', 'safari>=12'],
             additionalLegacyPolyfills:['regenerator-runtime/runtime'],
         })] : []),
-        ...(is_tauri_build ? [pwaStubPlugin()] : []),
-        ...(!is_tauri_build ? [VitePWA({
+        ...(is_tauri_build || mode === 'test' ? [pwaStubPlugin()] : []),
+        ...(!is_tauri_build && mode !== 'test' ? [VitePWA({
+            scope: base,
             registerType: 'prompt',
             injectRegister: false,
             manifest: {
+                id: base,
+                start_url: base,
+                scope: base,
                 name: '戴森球计划量化计算器',
                 short_name: 'DSP计算器',
                 description: '戴森球计划生产线量化计算工具',
-                theme_color: '#212529',
-                background_color: '#212529',
+                theme_color: '#09090b',
+                background_color: '#09090b',
                 display: 'standalone',
                 orientation: 'any',
                 categories: ['utilities', 'games'],
@@ -286,7 +288,7 @@ export default defineConfig(({mode}) => ({
                         urlPattern: /\.json$/i,
                         handler: 'StaleWhileRevalidate',
                         options: {
-                            cacheName: 'game-data-cache',
+                            cacheName: `dsp-game-data${cacheSuffix}`,
                             expiration: {
                                 maxEntries: 50,
                                 maxAgeSeconds: 60 * 60 * 24 * 30,
@@ -298,7 +300,7 @@ export default defineConfig(({mode}) => ({
                         urlPattern: /\/icon\/.*\.(png|webp)$/i,
                         handler: 'CacheFirst',
                         options: {
-                            cacheName: 'sprite-cache',
+                            cacheName: `dsp-sprites${cacheSuffix}`,
                             expiration: {
                                 maxEntries: 30,
                                 maxAgeSeconds: 60 * 60 * 24 * 365,

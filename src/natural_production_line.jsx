@@ -1,10 +1,12 @@
 import {useContext} from 'react';
-import {GameInfoContext, GlobalStateContext, SettingsContext, SettingsSetterContext} from './contexts.jsx';
+import {CompactModeContext, GameInfoContext, GlobalStateContext, SettingsContext, SettingsSetterContext} from './contexts.jsx';
 import {ApplyBuildingMultiplier} from './global_state.jsx';
 import {ItemIcon} from './icon';
 import {ItemSelect} from './item_select.jsx';
 import {FactorySelect, ProModeSelect, ProNumSelect, RecipeSelect} from './result.jsx';
 import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
+import {Button} from './components/ui/button';
+import {Badge} from './components/ui/badge';
 
 // { "目标物品": "氢", "建筑数量": 0, "配方id": 1, "增产点数": 0, "增产模式": 0, "建筑": 0 }
 
@@ -13,6 +15,7 @@ function NplRow({row, set_row, remove_row}) {
     const settings = useContext(SettingsContext);
     const game_info = useContext(GameInfoContext);
     const global_state = useContext(GlobalStateContext);
+    const compact_mode = useContext(CompactModeContext);
     let game_data = global_state.game_data;
 
     function set_row_prop(prop, is_number) {
@@ -53,45 +56,25 @@ function NplRow({row, set_row, remove_row}) {
         return output_num;
     }
 
-    console.log("NplRow", row);
     let item = row["目标物品"];
     let recipe_id = game_info.item_data[item][row["配方id"]];
     let recipe = game_data.recipe_data[recipe_id];
     let selected_building = game_data.factory_data[recipe["设施"]][row["建筑"]];
     let output_num = get_output_num(item, recipe, row["建筑数量"] * selected_building["倍率"], row["增产模式"], row["增产点数"], selected_building["名称"]);
-    return <tr className="table-info">
-        <td><a className="btn btn-sm btn-outline-primary ssmall text-nowrap mineralize-btn"
-               onClick={remove_row}>删除</a></td>
-        <td>
-            {/* 目标物品 */}
-            <ItemSelect item={item} set_item={set_item}/>
-        </td>
-        <td className="text-center">
-            <span style={{lineHeight: "30px"}}>{output_num}</span>
-        </td>
-        <td>
-            <div className="d-flex align-items-center gap-3">
-                {/* 所选工厂种类 */}
-                <div className="ms-auto text-nowrap">
-                    <ItemIcon item={selected_building["名称"]} size={30}/>
-                </div>
-                <span style={{margin: "-0.5em"}}>x</span>
-                {/* 建筑数量 */}
-                <AutoSizedInput value={row["建筑数量"]} onChange={set_row_prop("建筑数量", true)}/>
-            </div>
-        </td>
-        {/* 所选配方 */}
-        <td><RecipeSelect item={item} choice={row["配方id"]} onChange={set_row_prop("配方id", true)}/></td>
-        {/* 所选增产模式 */}
-        <td><ProModeSelect recipe_id={recipe_id} choice={row["增产模式"]} onChange={set_row_prop("增产模式", true)}/>
-        </td>
-        {/* 所选增产剂 */}
-        <td><ProNumSelect choice={row["增产点数"]} onChange={set_row_prop("增产点数", true)}/></td>
-        <td>
-            {/* 所选工厂种类 */}
-            <FactorySelect recipe_id={recipe_id} choice={row["建筑"]} onChange={set_row_prop("建筑", true)}/>
-        </td>
+    return <tr className="border-b bg-muted/40 transition-colors hover:bg-muted/60">
+        <td className="px-3 py-3"><Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive" aria-label={`删除${item}自然产线`} onClick={remove_row}>删除</Button></td>
+        <td className="px-3 py-3"><div className="flex flex-col items-start gap-1.5"><ItemSelect item={item} set_item={set_item}/><Badge variant="secondary" className="px-1.5 text-[10px] font-normal">自然产线</Badge></div></td>
+        <td className="px-3 py-3 text-right text-xs whitespace-nowrap tabular-nums">{output_num}</td>
+        <td className="px-3 py-3"><div className="flex items-center gap-1.5">
+            <ItemIcon item={selected_building["名称"]} size={26}/><span className="text-xs text-muted-foreground">×</span>
+            <AutoSizedInput value={row["建筑数量"]} onChange={set_row_prop("建筑数量", true)} aria-label={`${item}自然产线建筑数量`}/>
+        </div></td>
+        <td className="px-3 py-3"><RecipeSelect item={item} choice={row["配方id"]} onChange={set_row_prop("配方id", true)} compact={compact_mode}/></td>
+        <td className="px-3 py-3"><ProModeSelect recipe_id={recipe_id} choice={row["增产模式"]} onChange={set_row_prop("增产模式", true)}/></td>
+        <td className="px-3 py-3"><ProNumSelect choice={row["增产点数"]} onChange={set_row_prop("增产点数", true)}/></td>
+        <td className="px-3 py-3"><FactorySelect recipe_id={recipe_id} choice={row["建筑"]} onChange={set_row_prop("建筑", true)}/></td>
     </tr>;
+
 }
 
 export function NplRows() {
@@ -102,7 +85,6 @@ export function NplRows() {
 
     function set_npl(new_npl) {
         set_settings({"natural_production_line": new_npl});
-        console.log("set_npl", new_npl);
     }
 
     let rows = npl.map((npl_row, idx_row) => {

@@ -1,35 +1,89 @@
-# html版戴森球量化计算器
+# DSP Calculator · React + shadcn/ui
 
-![](https://img.shields.io/github/license/DSPCalculator/dsp-calc)
-![](https://img.shields.io/github/stars/DSPCalculator/dsp-calc)
-![Contributors](https://img.shields.io/github/contributors/DSPCalculator/dsp-calc)
-![GitHub Release](https://img.shields.io/github/v/release/DSPCalculator/dsp-calc)
+A production-chain calculator for Dyson Sphere Program (戴森球计划量化计算器), with a React 19 interface built from checked-in shadcn/ui components, Radix primitives and Tailwind CSS.
 
-## 在线使用方式
+The refactor preserves the existing game data, recipe choices, linear-programming solver, proliferation settings, mod combinations and production calculations. The interface provides searchable item selection, responsive results, light/dark themes, settings, existing production lines, and named demand/production presets.
 
-- 主站 (Netlify) https://dsp-calc.pro/ &emsp;&emsp; 分支/PR预览 https://b.dsp-calc.pro/
+## Local development
 
-- Github Pages: https://dspcalculator.github.io/dsp-calc/
+Use **Node.js 24** (the same version as CI) and npm. The npm lockfile is the CI source of truth.
 
-已经废弃的站点：~~https://shi-sang.gitee.io/dsp_calculator/~~
+```sh
+npm ci
+npm run dev
+```
 
-## 本地开发环境
+Open the URL printed by Vite. On the first development start and on every production build, the Vite sprite plugin generates icon coordinates and PNG/WebP atlases from `icon/`. Generated files are ignored by Git; do not remove the source icons.
 
-- 安装 Node.js (最低支持的版本为 20.19+ 或 22.12+ 或 任意更高的偶数大版本)，可以选择以下两种方式之一：
-    - 直接下载 [Node.js](https://nodejs.org/zh-cn/download) 并安装
-    - 使用 nvm (Node Version Manager，长期开发推荐)
-        - 如果是 Linux、macOS、WSL 等 POSIX 环境按照说明安装 [nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-        - 如果是 Windows 下载 [nvm-windows](https://github.com/coreybutler/nvm-windows/releases/latest)
-        - 安装后在命令行输入以下命令：`nvm install 24` (安装Node.js)，然后`nvm use 24` (使用刚才安装的Node.js)
-            - 可以将 `24` 换成你要的大版本
-- 确认 `npm` 指令可以运行
-- `npm install`
-- `npm run dev`，然后根据提示打开浏览器链接即可
+```sh
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run preview
+```
 
-## 部署
+`npm test` runs Vitest once. Use `npm run test:watch` while editing. The production output is `dist/`; `npm run preview` serves it locally. `npm run typecheck` checks the TypeScript shadcn/ui primitives; the existing calculator remains JavaScript/JSX.
 
-- 您可以使用本项目release分支内的静态文件直接部署
-- 或使用 `npm run build` 来生成静态文件
+### Regression coverage
+
+`tests/solver.test.js` compares production, surplus, production rates and building counts with fixtures captured from the pre-refactor commit `d53123399a7ab6278d3d1b704e111bef728b727e`. The 28 scenarios cover every supported mod-data combination, basic iron/circuits, universe matrices, alternate recipes, factory selection, proliferation, mining rates, external supply, mineralization, existing production lines and the Void mod’s blue buff. Additional assertions cover default scheme isolation and building multipliers.
+
+The fixture is deliberately independent of the current UI and solver. If an intentional calculation/data change needs a new baseline, review it explicitly. `node scripts/capture-solver-baseline.mjs` reproduces the original fixture from that Git commit (requires the commit in local history); do not regenerate fixtures merely to make a failing test pass.
+
+### Verification notes
+
+The refactor has numerical and DOM interaction tests, lint/typechecking, and verified production builds for both `/` and `/dsp-calc/`. Browser visual/responsive QA was **not performed** in the refactor environment because its cloud browser blocked localhost access. DOM tests do not replace a visual review.
+
+Before release, open the preview on desktop and mobile widths; check item search, recipe/factory/proliferation controls, keyboard navigation and dialog focus, cancel/confirm flows, saved presets after reload, mod switching, light/dark themes, and the installed PWA update prompt.
+
+## Deploy this fork to GitHub Pages
+
+1. In your GitHub repository, open **Settings → Pages**.
+2. Under **Build and deployment → Source**, select **GitHub Actions**. Do this before the first deployment; the workflow does not silently change repository settings.
+3. Push this code to **main**, or open **Actions → Validate and deploy GitHub Pages → Run workflow**, selecting **main**.
+4. After the workflow succeeds, open the deployment URL shown by the `github-pages` environment / Settings → Pages. A typical project URL is `https://<owner>.github.io/<repository>/`.
+
+The workflow in `.github/workflows/deploy_release.yml`:
+
+- Installs locked dependencies with `npm ci` on Node.js 24, then runs lint, typechecking, tests and the production build
+- Uses the official `configure-pages`, `upload-pages-artifact` and `deploy-pages` actions, without publishing a generated branch or needing a personal access token
+- Takes its base path from `configure-pages`, so repository sites, account sites and configured custom domains receive the correct asset, manifest and service-worker paths
+- Builds and validates pull requests without deploying them or granting them Pages write permissions
+- Deploys only `main`, with `pages: write` and `id-token: write` scoped to the deploy job; builds have read-only repository permissions
+- Keeps production deployments serial; pull-request checks cannot cancel them
+
+If a GitHub environment approval is required by your repository, approve the waiting deployment in Actions. Set a custom domain in **Settings → Pages**; do not hard-code a repository name into Vite.
+
+To check the production build under a subdirectory before deploying (POSIX shell):
+
+```sh
+VITE_BASE_PATH=/dsp-calc/ npm run build
+node scripts/verify-pages-build.mjs /dsp-calc/
+npm run preview -- --base=/dsp-calc/
+```
+
+For root/custom-domain hosting, use `VITE_BASE_PATH=/` and pass `/` to the verification script. The normal local build defaults to `/`. Tauri builds retain the relative `./` base and omit service workers and the browser legacy bundle.
+
+The verification script checks the emitted HTML asset links, PWA start URL/scope, manifest icons, service worker and game sprite files. It also runs in the Pages workflow. See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) and [Vite's GitHub Pages guide](https://vite.dev/guide/static-deploy#github-pages).
+
+### Existing upstream workflows
+
+The inherited preview and Netlify workflows publish to `b.dsp-calc.pro` / `dsp-calc.pro`, which belong to the upstream project. They are retained but restricted to the exact upstream repository `DSPCalculator/dsp-calc`, so pushes, tags and PRs in a fork never upload its artifacts to upstream infrastructure. Fork Pages deployments use only the workflow above. The separate tagged Tauri desktop release workflow is retained.
+
+## UI and saved-data compatibility
+
+- Shared shadcn/ui components live in `src/components/ui/`; `components.json` records their configuration. App styling uses semantic Tailwind theme tokens rather than Bootstrap or Ant Design.
+- Calculation logic remains in `src/global_state.jsx`, with the existing data conversion in `src/GameData.jsx` and recipe initialization in `src/scheme_data.jsx`.
+- Existing local-storage keys and game-scoped save formats are preserved: `scheme_data`, `needs_list`, `auto_scheme`, `auto_settings`, `auto_mods` and `theme`.
+- Saves remain local to the current browser and origin. A fork's Pages URL has a different origin from the upstream domain, so it cannot automatically read saves stored on the upstream site. Save compatibility does not transfer browser storage between domains.
+- Mod changes remain explicit because they can reset the current demand/production setup. PWA updates remain user-prompted.
+
+## Upstream project
+
+[Original repository](https://github.com/DSPCalculator/dsp-calc) · [Upstream live calculator](https://dsp-calc.pro/) · [Upstream Pages](https://dspcalculator.github.io/dsp-calc/)
+
+The original algorithm notes and roadmap are retained below.
 
 ## 简介
 

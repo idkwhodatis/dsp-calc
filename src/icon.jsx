@@ -1,6 +1,7 @@
 import {useContext} from 'react';
 import {GlobalStateContext} from './contexts';
 import {get_icon_by_item} from "./GameData.jsx";
+import {Tooltip, TooltipContent, TooltipTrigger} from './components/ui/tooltip';
 
 const image_index_modules = import.meta.glob('../icon/*.json', {
     import: 'default',
@@ -19,11 +20,12 @@ export function IconStyles() {
         //console.log("mod_name", mod_name)
         return `
 .icon-${mod_name} {
-    vertical-align: bottom;
+    vertical-align: middle;
     display: inline-block;
-    background-image: url('icon/${mod_name}.png');
-    @supports (background-image: url('icon/${mod_name}.webp')) {
-        background-image: url('icon/${mod_name}.webp');
+    flex-shrink: 0;
+    background-image: url('${import.meta.env.BASE_URL}icon/${mod_name}.png');
+    @supports (background-image: url('${import.meta.env.BASE_URL}icon/${mod_name}.webp')) {
+        background-image: url('${import.meta.env.BASE_URL}icon/${mod_name}.webp');
     }
 }`;
     }
@@ -44,7 +46,7 @@ function Icon({icon, size, mods}) {
             return icon2;
         }
     }
-    return <><span
+    return <><span role="img" aria-label={icon}
         style={{
             width: size, height: size,
             display: "inline-block",
@@ -69,7 +71,7 @@ function get_icon_from_one_mod(icon, size, mod) {
         const bgx = -x * scale, bgy = -y * scale;
 
         return <>
-            <div className={`icon-${mod}`}
+            <span className={`icon-${mod}`} role="img" aria-label={icon}
                  style={{
                      width: size, height: size,
                      backgroundPosition: `${bgx}px ${bgy}px`,
@@ -93,12 +95,12 @@ export function ItemIcon({item, size, tooltip}) {
 
     tooltip = tooltip === undefined ? true : tooltip;
     if (tooltip) {
-        let fontSize = Math.min(size / 2, 16);
-        return <span data-tooltip={item} className="fast-tooltip"
-                     style={{fontSize: fontSize}}>
-            {img}
-        </span>;
-    } else {
-        return img;
+        return <Tooltip>
+            <TooltipTrigger asChild>
+                <span className="inline-flex shrink-0 items-center align-middle">{img}</span>
+            </TooltipTrigger>
+            <TooltipContent side="top">{item}</TooltipContent>
+        </Tooltip>;
     }
+    return img;
 }

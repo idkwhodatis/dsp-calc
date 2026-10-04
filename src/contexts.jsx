@@ -1,8 +1,9 @@
-import {createContext, useEffect, useState} from 'react';
+import {createContext, useEffect, useState, useMemo} from 'react';
 import {GameInfo, GlobalState} from './global_state';
 import {init_scheme_data} from './scheme_data';
-import {default_game_data} from "./GameData.jsx";
-import {useSetState} from "ahooks";
+import {default_game_data, get_game_data, get_mod_options, MoreMegaStructureGUID, TheyComeFromVoidGUID} from "./GameData.jsx";
+import {getStorageSnapshot, readStorageObject} from "./lib/storage.js";
+
 
 /** set_game_name_and_data(game_name, game_data) */
 export const GameInfoSetterContext = createContext(null);
@@ -11,6 +12,7 @@ export const SchemeDataSetterContext = createContext(null);
 export const SettingsSetterContext = createContext(null);
 export const GlobalStateContext = createContext(null);
 export const SettingsContext = createContext(null);
+export const StorageWarningContext = createContext("");
 export const GameInfoContext = createContext(null);
 
 const DEFAULT_SETTINGS = {
@@ -42,7 +44,7 @@ const DEFAULT_SETTINGS = {
     inc_rate: 1.0,
     blue_buff: false,
 
-    mineralize_list: [],
+    mineralize_list: {},
     natural_production_line: []
 };
 export const DefaultSettingsContext = createContext(DEFAULT_SETTINGS);
@@ -65,27 +67,42 @@ function safe_parse_json(str) {
     }
 }
 
+function restore_scheme(game_data) {
+    let all;
+    try { all = readStorageObject("auto_scheme"); } catch { all = {}; }
+    const saved = all[game_data.game_name];
+    return saved?.scheme_for_recipe?.length === game_data.recipe_data.length
+        ? saved : init_scheme_data(game_data);
+}
+
 export function ContextProvider({children}) {
-    const [game_info, set_game_info] = useState(new GameInfo(default_game_data));
-    const [scheme_data, set_scheme_data] = useState(() => {
-        const game_name = default_game_data.game_name;
-        const all = safe_parse_json(localStorage.getItem("auto_scheme")) || {};
-        const saved = all[game_name];
-        if (saved && saved.scheme_for_recipe &&
-            saved.scheme_for_recipe.length === default_game_data.recipe_data.length) {
-            return saved;
-        }
-        return init_scheme_data(default_game_data);
+    const [storageWarning, setStorageWarning] = useState("");
+    const [model, set_model] = useState(() => {
+        const saved_mods = safe_parse_json(getStorageSnapshot("auto_mods"));
+        const valid_mods = Array.isArray(saved_mods) ? saved_mods.filter(mod => get_mod_options().some(option => option.value === mod)) : [];
+        if (valid_mods.includes(TheyComeFromVoidGUID) && !valid_mods.includes(MoreMegaStructureGUID)) valid_mods.push(MoreMegaStructureGUID);
+        const game_data = valid_mods.length ? get_game_data(valid_mods) : default_game_data;
+        return {game_info: new GameInfo(game_data), scheme_data: restore_scheme(game_data)};
     });
-    const [settings, set_settings] = useSetState(() => {
-        const saved = safe_parse_json(localStorage.getItem("auto_settings"));
-        const merged = saved ? {...DEFAULT_SETTINGS, ...saved} : DEFAULT_SETTINGS;
+    const {game_info, scheme_data} = model;
+    function set_scheme_data(next) {
+        set_model(previous => ({...previous, scheme_data: typeof next === "function" ? next(previous.scheme_data) : next}));
+    }
+    const [settings, update_settings] = useState(() => {
+        let saved;
+        try { saved = readStorageObject("auto_settings"); } catch { saved = {}; }
+        const merged = {...DEFAULT_SETTINGS, ...saved};
+        // Legacy empty arrays must become a record, or JSON drops named items.
+        if (Array.isArray(merged.mineralize_list)) merged.mineralize_list = {...merged.mineralize_list};
         // 清理 delete arr[i] 导致的 null 空洞
         if (Array.isArray(merged.natural_production_line)) {
             merged.natural_production_line = merged.natural_production_line.filter(e => e != null);
         }
         return merged;
     });
+    function set_settings(patch) {
+        update_settings(previous => ({...previous, ...(typeof patch === 'function' ? patch(previous) : patch)}));
+    }
     const [compact_mode, set_compact_mode] = useState(() => get_compact_mode(window.innerWidth));
 
     useEffect(() => {
@@ -110,21 +127,29 @@ export function ContextProvider({children}) {
     // Auto-save scheme_data
     const game_name = game_info.game_data.game_name;
     useEffect(() => {
-        let all = safe_parse_json(localStorage.getItem("auto_scheme")) || {};
-        all[game_name] = scheme_data;
-        localStorage.setItem("auto_scheme", JSON.stringify(all));
+        try {
+            const all = readStorageObject("auto_scheme");
+            all[game_name] = scheme_data;
+            localStorage.setItem("auto_scheme", JSON.stringify(all));
+        } catch {
+            setStorageWarning("无法自动保存生产策略。原始保存数据未被修改，请检查浏览器存储权限或备份现有数据。");
+        }
     }, [scheme_data, game_name]);
 
     // Auto-save settings
     useEffect(() => {
-        localStorage.setItem("auto_settings", JSON.stringify(settings));
+        try {
+            readStorageObject("auto_settings");
+            localStorage.setItem("auto_settings", JSON.stringify(settings));
+        } catch {
+            setStorageWarning("无法自动保存计算设置。原始保存数据未被修改，请检查浏览器存储权限或备份现有数据。");
+        }
     }, [settings]);
 
-    console.log("[+] new GlobalState");
-    let global_state = new GlobalState(game_info, scheme_data, settings);
+    const global_state = useMemo(() => new GlobalState(game_info, scheme_data, settings), [game_info, scheme_data, settings]);
 
     function set_game_data(game_data) {
-        set_game_info(new GameInfo(game_data));
+        set_model({game_info: new GameInfo(game_data), scheme_data: restore_scheme(game_data)});
     }
 
     return <CompactModeContext.Provider value={compact_mode}>
@@ -134,7 +159,7 @@ export function ContextProvider({children}) {
                     <SchemeDataSetterContext.Provider value={set_scheme_data}>
                         <SettingsSetterContext.Provider value={set_settings}>
                             <SettingsContext.Provider value={settings}>
-                                {children}
+                                <StorageWarningContext.Provider value={storageWarning}>{children}</StorageWarningContext.Provider>
                             </SettingsContext.Provider>
                         </SettingsSetterContext.Provider>
                     </SchemeDataSetterContext.Provider>
