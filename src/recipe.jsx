@@ -64,7 +64,7 @@ export function Recipe({recipe, compact}) {
             ? Math.round(count * 100) / 100
             : count.toFixed(findNonZeroPosition(count) + 2);
         return <Fragment key={item}>
-            <ItemIcon item={item} size={26}/>
+            <ItemIcon item={item} size={22}/>
             <span className="mr-1 self-end text-[11px] tabular-nums text-muted-foreground">{count_used}</span>
         </Fragment>;
     }
@@ -85,15 +85,15 @@ export function Recipe({recipe, compact}) {
 
     if (compact === "narrow" || compact === "compact") {
         if (input_entries.length === 0) return <span className="text-xs text-muted-foreground" title={description}>{time}s</span>;
-        return <span className="block min-w-0" title={description}>
-            <CompactRecipeIcons input_entries={input_entries} time={time} icon_size={compact === "narrow" ? 22 : 24} gap={4}/>
+        return <span className={cn("block min-w-0", compact === "narrow" ? "w-24" : "w-28")} title={description}>
+            <CompactRecipeIcons input_entries={input_entries} time={time} icon_size={20} gap={2}/>
         </span>;
     }
 
     return <span className="inline-flex items-center gap-0.5 whitespace-nowrap" title={description}>
         {input_doms.length > 0 && <>
             {input_doms}
-            <span className="mx-1 inline-flex min-w-7 flex-col items-center text-muted-foreground">
+            <span className="mx-0.5 inline-flex min-w-6 flex-col items-center text-muted-foreground">
                 <span aria-hidden="true" className="text-lg leading-4">→</span>
                 <span className="text-[10px] leading-3 tabular-nums">{time}s</span>
             </span>
@@ -104,14 +104,14 @@ export function Recipe({recipe, compact}) {
 }
 
 export function HorizontalMultiButtonSelect({choice, options, onChange, no_gap, className, icon_size}) {
-    const resolved_icon_size = icon_size || 26;
-    return <div className={cn("dsp-segmented-control inline-flex w-fit items-center rounded-lg border bg-muted/40 p-0.5", no_gap ? "gap-0" : "gap-0.5", className)} role="group">
+    const resolved_icon_size = icon_size || 20;
+    return <div className={cn("dsp-segmented-control inline-flex w-fit items-center rounded-md border bg-muted/40 p-0.5", no_gap ? "gap-0" : "gap-0.5", className)} role="group">
         {options.map(({value, label, item_icon, className: optionClassName}) => {
             const selected = choice == value;
             return <Button key={value} type="button" variant="ghost" size="sm"
                 aria-pressed={selected}
                 aria-label={typeof label === 'string' ? label : item_icon || String(value)}
-                className={cn("h-auto min-h-7 gap-1 rounded-md px-1.5 py-1 text-xs font-medium whitespace-nowrap", selected ? "bg-background text-foreground shadow-sm ring-1 ring-border hover:bg-background" : "text-muted-foreground hover:text-foreground", optionClassName)}
+                className={cn("h-auto min-h-6 min-w-6 gap-0.5 rounded-sm px-0.5 py-0.5 text-[11px] font-medium whitespace-nowrap", selected ? "bg-background text-foreground shadow-sm ring-1 ring-border hover:bg-background" : "text-muted-foreground hover:text-foreground", optionClassName)}
                 onClick={() => onChange(value)}>
                 {item_icon && <ItemIcon item={item_icon} size={resolved_icon_size}/>}
                 {label != null && (typeof label === 'string' ? <span className="px-0.5">{label}</span> : label)}

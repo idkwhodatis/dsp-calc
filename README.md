@@ -33,7 +33,7 @@ The fixture is deliberately independent of the current UI and solver. If an inte
 
 ### Verification notes
 
-The refactor has numerical and DOM interaction tests, lint/typechecking, and verified production builds for both `/` and `/dsp-calc/`. Browser visual/responsive QA was **not performed** in the refactor environment because its cloud browser blocked localhost access. DOM tests do not replace a visual review.
+The refactor has numerical and DOM interaction tests, lint/typechecking, and verified production builds for both `/` and `/dsp-calc/`. The public deployment has been smoke-tested in a desktop browser for item search, production calculations, bulk building selection, themes and the PWA update flow. The item picker uses the original compact icon-grid placement; the overview uses dense rows and a desktop summary sidebar. Mobile styles have regression coverage, but a real mobile viewport visual check is still recommended; DOM tests do not replace visual review.
 
 Before release, open the preview on desktop and mobile widths; check item search, recipe/factory/proliferation controls, keyboard navigation and dialog focus, cancel/confirm flows, saved presets after reload, mod switching, light/dark themes, and the installed PWA update prompt.
 
