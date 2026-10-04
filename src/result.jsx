@@ -13,7 +13,9 @@ import {Tooltip, TooltipContent, TooltipTrigger} from './components/ui/tooltip';
 import {cn} from './lib/utils';
 import {estimateLogistics} from './logistics.js';
 import {LogisticsOverview} from './logistics_overview.jsx';
-import {isPlanOwnedSource} from './lib/plan-state.js';
+import {buildDependencyView} from './dependency_view.js';
+import {DependencyOverview} from './dependency_overview.jsx';
+import {isPlanOwnedSource, targetIdentity} from './lib/plan-state.js';
 
 const ValueWithDifference = ({currentValue, previousValue}) => {
     const global_state = useContext(GlobalStateContext);
@@ -200,6 +202,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     const compact_mode = useContext(CompactModeContext);
     const result_ref = useRef(null);
     const pending_source_focus = useRef(null);
+    const pending_global_focus = useRef(null);
+    const [view_mode, set_view_mode] = useState('flat');
     const is_compact = compact_mode !== "full";
     const is_mobile = compact_mode === "mobile";
 
@@ -219,6 +223,26 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         const res = global_state.calculate(needs_list);
         return res;
     }, [global_state, needs_list]);
+
+    const dependency_view = useMemo(() => view_mode === 'tree'
+        ? buildDependencyView(global_state, needs_list, [result_dict, lp_surplus_list, source_details]) : null,
+    [view_mode, global_state, needs_list, result_dict, lp_surplus_list, source_details]);
+
+    function show_global_line(item) {
+        pending_global_focus.current = item;
+        set_view_mode('flat');
+    }
+
+    useEffect(() => {
+        if (view_mode !== 'flat' || !pending_global_focus.current) return;
+        const row = Array.from(result_ref.current?.querySelectorAll('tr[data-product]') || [])
+            .find(element => element.dataset.product === pending_global_focus.current);
+        if (row) {
+            row.focus({preventScroll: true});
+            row.scrollIntoView?.({block: 'nearest', inline: 'nearest'});
+        }
+        pending_global_focus.current = null;
+    }, [view_mode]);
 
     useEffect(() => {
         if (!pending_source_focus.current) return;
@@ -421,7 +445,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
             const mineralizeControl = <Button type="button" variant="ghost" size="sm" className="h-8 px-1 text-base text-muted-foreground"
                 aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
                 onClick={() => is_mineralized ? unmineralize(i) : mineralize(i)}>{is_mineralized ? '恢复' : '原矿化'}</Button>;
-            result_table_rows.push(<tr key={i} data-product={i} className={cn('dsp-source-group-row border-b last:border-0', row_class)}>
+            result_table_rows.push(<tr key={i} data-product={i} tabIndex={-1} aria-label={`${i}全局产线`} className={cn('dsp-source-group-row border-b last:border-0 focus-visible:outline-2 focus-visible:outline-ring', row_class)}>
                 <td colSpan={8} className="px-2 py-3">
                     <ProductionSourceGroup item={i} group={group} onAdd={() => add_source(i)} mineralizeControl={mineralizeControl}
                         totalControl={<output aria-label={`${i}总需求`} className="text-base font-semibold tabular-nums">{group.required.toFixed(fixed_num)}</output>}>
@@ -451,7 +475,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
             </tr>);
             continue;
         }
-        result_table_rows.push(<tr className={cn("border-b last:border-0 transition-colors hover:bg-muted/40", row_class)} key={i} data-product={i}>
+        result_table_rows.push(<tr className={cn("border-b last:border-0 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring", row_class)} key={i} data-product={i} tabIndex={-1} aria-label={`${i}全局产线`}>
             <td className="px-2 py-3">
                 <Button type="button" variant="ghost" size="sm" className="h-7 whitespace-nowrap px-1 text-sm text-muted-foreground"
                     aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
@@ -603,7 +627,13 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                     <Badge variant="secondary" className="px-1.5 py-0.5 text-sm font-normal">{result_table_rows.length} 项物品 · 每{time_tick === 60 ? '分钟' : '秒'}</Badge>
                 </div>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+                <div role="group" aria-label="生产结果视图" className="inline-flex items-center gap-0.5 rounded-md border bg-muted/30 p-0.5">
+                    <Button type="button" variant={view_mode === 'flat' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2 text-sm"
+                        aria-pressed={view_mode === 'flat'} onClick={() => set_view_mode('flat')}>平铺</Button>
+                    <Button type="button" variant={view_mode === 'tree' ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2 text-sm"
+                        aria-pressed={view_mode === 'tree'} onClick={() => set_view_mode('tree')}>树状</Button>
+                </div>
                 <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-sm" onClick={() => set_show_ore_popup(true)}>原矿与溢出</Button>
                 <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-sm" onClick={() => set_show_building_popup(true)}>建筑与需求</Button>
             </div>
@@ -617,6 +647,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         </div>}
         <div className="dsp-result-layout flex max-w-full items-start gap-4">
             <Card className="dsp-result-table-card w-fit min-w-0 max-w-full flex-[0_1_auto] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
+                {view_mode === 'tree' ? <DependencyOverview key={`${game_data.game_name}:${targetIdentity(needs_list)}`} viewModel={dependency_view} settings={settings} onShowGlobal={show_global_line}/> : <>
                 <p className="border-b bg-muted/20 px-2 py-2 text-sm text-muted-foreground lg:hidden">左右滑动表格，查看配方与生产设置</p>
                 <div className="dsp-result-table-scroll max-h-[70dvh] max-w-full overflow-auto" tabIndex={0} role="region" aria-label="生产结果表，可横向滚动">
                     <table className="dsp-production-table w-auto border-collapse text-base [&_td]:align-middle">
@@ -638,6 +669,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                         </tbody>
                     </table>
                 </div>
+                </>}
             </Card>
             <aside className="dsp-result-summary hidden max-h-[70dvh] w-max max-w-80 shrink-0 content-start gap-3 overflow-y-auto lg:grid" aria-label="生产统计">
                 {energyCard}{rawMaterialCard}{buildingCard}

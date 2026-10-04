@@ -139,7 +139,7 @@ export function ItemSelect({item, set_item, text = '选择物品', icon, disable
                                   aria-label="清除搜索" onClick={clearSearch}><X className="size-3.5"/></Button>}
             </div>
             <Tabs value={activePage.id} onValueChange={value => { setPageId(value); setQuery(''); }} className="min-h-0 gap-3">
-                <div className="shrink-0 overflow-x-auto">
+                <div className="shrink-0 overflow-x-auto overflow-y-hidden">
                     <TabsList aria-label="游戏物品分页" className="h-8">
                         {layout.pages.map(page => <TabsTrigger key={page.id} value={page.id} className="px-3 text-xs">{page.label}</TabsTrigger>)}
                     </TabsList>
