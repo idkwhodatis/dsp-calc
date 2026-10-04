@@ -1,3 +1,7 @@
+import {isReplacedLegacyVanillaScheme} from './game-data-migrations.js';
+
+export const GAME_DATA_BACKUP_KEY = 'game_data_migration_backups';
+
 const STORAGE_EVENT = 'dsp-calc:storage';
 
 export function isStorageRecord(value) {
@@ -46,7 +50,31 @@ export function updateScopedStorage(key, scope, updater) {
     if (!isStorageRecord(existing)) {
         throw new Error('此游戏版本的保存数据无法读取，原始数据未被修改。');
     }
-    const updated = {...all, [scope]: updater({...existing})};
+    const next = updater({...existing});
+    // Loading a preset leaves its original untouched. Archive only when an
+    // explicit save is about to replace a legacy Vanilla entry with new data.
+    if (scope === 'Vanilla' && (key === 'scheme_data' || key === 'needs_list')
+        && Object.entries(next).some(([name, value]) => isReplacedLegacyVanillaScheme(
+            key === 'needs_list' ? existing[name]?.scheme_data : existing[name],
+            key === 'needs_list' ? value?.scheme_data : value))) {
+        backupGameDataStorage(key);
+    }
+    const updated = {...all, [scope]: next};
     localStorage.setItem(key, JSON.stringify(updated));
     window.dispatchEvent(new Event(STORAGE_EVENT));
+}
+
+/** Archive exact serialized bytes before any migration overwrites a saved value. */
+export function backupGameDataStorage(key) {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return;
+    const existing = localStorage.getItem(GAME_DATA_BACKUP_KEY);
+    let backup;
+    try { backup = existing === null ? {} : JSON.parse(existing); } catch { backup = null; }
+    if (!isStorageRecord(backup) || (Object.hasOwn(backup, key) && !Array.isArray(backup[key]))) {
+        throw new Error('旧版本数据的备份无法读取，原始保存数据未被修改。');
+    }
+    const snapshots = backup[key] || [];
+    if (snapshots.includes(raw)) return;
+    localStorage.setItem(GAME_DATA_BACKUP_KEY, JSON.stringify({...backup, [key]: [...snapshots, raw]}));
 }

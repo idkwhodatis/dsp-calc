@@ -38,6 +38,12 @@ The refactor preserves the existing game data, recipe choices, proliferation set
 
 传送带估算使用合并净出料流量；分拣器使用单台设施满负荷的目标物品毛产出。分拣器数量是每台设施的容量下限，不是整条产线的建筑总数。内部回流、进料、其他副产物、接口布局、欠电及科技升级均需另行核对。采集/直连接口不会套用普通制造机的分拣器推荐；研究站堆叠和集装分拣器会明确提示条件。未核实运力的模组组合不显示貌似精确的推荐。详见[物流模型与来源](docs/logistics-model.md)。
 
+## 游戏数据版本
+
+基础数据仍为 **0.10.31.24710**，仅在原版配置中补入已核验的 **全息信标**：3 铁块 + 4 棱镜 + 2 电浆激发器 + 2 电路板，4 秒生产 1 个，支持增产与加速。原有 238 条配方及序号完整保留，旧策略和完整计划会按这一明确增量迁移。
+
+这不是完整的 0.10.35 适配；黑雾引力透镜的原版槽位及接收站消耗、产出与喷涂参数仍待当前游戏数据核实。模组组合保持各自原有数据。来源、图标、固定槽位移动和保存兼容说明见[数据来源与版本范围](docs/game-data-provenance.md)。
+
 ## Local development
 
 Use **Node.js 24** (the same version as CI) and npm. The npm lockfile is the CI source of truth.

@@ -6,7 +6,7 @@ import {NeedsList, NeedsListStorage} from './needs_list.jsx';
 import {Result} from './result.jsx';
 import {SchemeStorage} from './scheme_data.jsx';
 import {Settings} from './settings.jsx';
-import {get_game_data, get_mod_options, MoreMegaStructureGUID, TheyComeFromVoidGUID, vanilla_game_version} from './GameData.jsx';
+import {get_game_data, get_mod_options, MoreMegaStructureGUID, TheyComeFromVoidGUID, vanilla_data_description} from './GameData.jsx';
 import {Button} from './components/ui/button';
 import {Badge} from './components/ui/badge';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from './components/ui/card';
@@ -50,7 +50,7 @@ function GameVersion() {
     return <Dialog open={open} onOpenChange={changeOpen}>
         <DialogTrigger asChild><Button variant="outline" size="sm"><Box className="size-4"/><span>{game_info.game_data.mods.length ? `${game_info.game_data.mods.length} 个模组` : '原版游戏'}</span><ChevronDown className="size-3 text-muted-foreground"/></Button></DialogTrigger>
         <DialogContent>
-            <DialogHeader><DialogTitle>游戏与模组</DialogTitle><DialogDescription>原版 v{vanilla_game_version} · 选择已安装的模组来匹配游戏配方</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>游戏与模组</DialogTitle><DialogDescription>{vanilla_data_description}</DialogDescription></DialogHeader>
             <div className="space-y-2 py-2">{options.map(option => <label key={option.value} className="flex cursor-pointer items-center gap-3 rounded-lg border p-4 hover:bg-accent"><Checkbox checked={draft.includes(option.value)} onCheckedChange={checked => toggle(option.value, checked)}/><span className="text-sm font-medium">{option.label}</span></label>)}</div>
             {<p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">切换模组会清空当前需求、现有产线与原矿化列表，并重置对应采集参数。已保存的需求列表和生产策略会按游戏版本保留。深空来敌会自动启用更多巨构。</p>}
             <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>取消</Button><Button onClick={apply} disabled={JSON.stringify(mods) === JSON.stringify(draft)}>应用模组</Button></DialogFooter>
@@ -69,7 +69,7 @@ function AppWithContexts() {
     const set_settings = useContext(SettingsSetterContext);
     const game_info = useContext(GameInfoContext);
     const clearData = () => {
-        ['auto_mods', 'auto_scheme', 'auto_settings', 'scheme_data', 'needs_list'].forEach(key => localStorage.removeItem(key));
+        ['auto_mods', 'auto_scheme', 'auto_settings', 'scheme_data', 'needs_list', 'game_data_migration_backups'].forEach(key => localStorage.removeItem(key));
         window.location.reload();
     };
     return <main id="main" className="mx-auto min-h-[calc(100dvh-4rem)] max-w-[1800px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">

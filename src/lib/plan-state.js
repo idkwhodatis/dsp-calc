@@ -1,5 +1,6 @@
 import {isStorageRecord} from './storage.js';
 import {normalizeSourceIds} from './source-storage.js';
+import {migrateSchemeForGame} from './game-data-migrations.js';
 
 export const PLAN_VERSION = 1;
 
@@ -59,6 +60,7 @@ function validateNeeds(needs, game_info) {
 
 function validateScheme(scheme, game_info) {
     const game = game_info.game_data;
+    scheme = migrateSchemeForGame(scheme, game);
     if (!isStorageRecord(scheme) || !isStorageRecord(scheme.item_recipe_choices)
         || !Array.isArray(scheme.scheme_for_recipe)
         || scheme.scheme_for_recipe.length !== game.recipe_data.length

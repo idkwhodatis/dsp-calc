@@ -2,10 +2,11 @@ import {createContext, useEffect, useState, useMemo} from 'react';
 import {GameInfo, GlobalState} from './global_state';
 import {init_scheme_data} from './scheme_data';
 import {default_game_data, get_game_data, get_mod_options, MoreMegaStructureGUID, TheyComeFromVoidGUID} from "./GameData.jsx";
-import {getStorageSnapshot, readStorageObject} from "./lib/storage.js";
+import {backupGameDataStorage, getStorageSnapshot, readStorageObject} from "./lib/storage.js";
 import {migrateLegacyProductionSources} from './production_sources.js';
 import {normalizeSourceIds} from './lib/source-storage.js';
 import {clearPlanSources, decodeSavedPlan, isPlanOwnedSource, retireUnscopedPlanSources, settingsForAutosave, targetIdentity} from './lib/plan-state.js';
+import {migrateSchemeForGame} from './lib/game-data-migrations.js';
 
 
 /** set_game_name_and_data(game_name, game_data) */
@@ -77,7 +78,7 @@ function safe_parse_json(str) {
 function restore_scheme(game_data) {
     let all;
     try { all = readStorageObject("auto_scheme"); } catch { all = {}; }
-    const saved = all[game_data.game_name];
+    const saved = migrateSchemeForGame(all[game_data.game_name], game_data);
     return saved?.scheme_for_recipe?.length === game_data.recipe_data.length
         ? saved : init_scheme_data(game_data);
 }
@@ -184,12 +185,19 @@ export function ContextProvider({children}) {
     useEffect(() => {
         try {
             const all = readStorageObject("auto_scheme");
+            const saved = all[game_name];
+            if (saved && saved.scheme_for_recipe?.length !== game_info.game_data.recipe_data.length) {
+                if (migrateSchemeForGame(saved, game_info.game_data) === saved) {
+                    throw new Error('Unsupported saved data revision');
+                }
+                backupGameDataStorage('auto_scheme');
+            }
             all[game_name] = scheme_data;
             localStorage.setItem("auto_scheme", JSON.stringify(all));
         } catch {
             setStorageWarning("无法自动保存生产策略。原始保存数据未被修改，请检查浏览器存储权限或备份现有数据。");
         }
-    }, [scheme_data, game_name]);
+    }, [scheme_data, game_name, game_info]);
 
     // Auto-save settings
     useEffect(() => {
