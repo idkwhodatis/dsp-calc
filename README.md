@@ -41,16 +41,16 @@ Before release, open the preview on desktop and mobile widths; check item search
 
 1. In your GitHub repository, open **Settings → Pages**.
 2. Under **Build and deployment → Source**, select **GitHub Actions**. Do this before the first deployment; the workflow does not silently change repository settings.
-3. Push this code to **main**, or open **Actions → Validate and deploy GitHub Pages → Run workflow**, selecting **main**.
+3. Push this code to the **default branch** (currently `master`), or open **Actions → Validate and deploy GitHub Pages → Run workflow**, selecting the default branch.
 4. After the workflow succeeds, open the deployment URL shown by the `github-pages` environment / Settings → Pages. A typical project URL is `https://<owner>.github.io/<repository>/`.
 
-The workflow in `.github/workflows/deploy_release.yml`:
+The workflow in `.github/workflows/pages.yml`:
 
 - Installs locked dependencies with `npm ci` on Node.js 24, then runs lint, typechecking, tests and the production build
 - Uses the official `configure-pages`, `upload-pages-artifact` and `deploy-pages` actions, without publishing a generated branch or needing a personal access token
 - Takes its base path from `configure-pages`, so repository sites, account sites and configured custom domains receive the correct asset, manifest and service-worker paths
 - Builds and validates pull requests without deploying them or granting them Pages write permissions
-- Deploys only `main`, with `pages: write` and `id-token: write` scoped to the deploy job; builds have read-only repository permissions
+- Deploys only the current repository default branch, with `pages: write` and `id-token: write` scoped to the deploy job; builds have read-only repository permissions
 - Keeps production deployments serial; pull-request checks cannot cancel them
 
 If a GitHub environment approval is required by your repository, approve the waiting deployment in Actions. Set a custom domain in **Settings → Pages**; do not hard-code a repository name into Vite.
@@ -67,9 +67,11 @@ For root/custom-domain hosting, use `VITE_BASE_PATH=/` and pass `/` to the verif
 
 The verification script checks the emitted HTML asset links, PWA start URL/scope, manifest icons, service worker and game sprite files. It also runs in the Pages workflow. See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) and [Vite's GitHub Pages guide](https://vite.dev/guide/static-deploy#github-pages).
 
-### Existing upstream workflows
+### Disabled upstream workflows
 
-The inherited preview and Netlify workflows publish to `b.dsp-calc.pro` / `dsp-calc.pro`, which belong to the upstream project. They are retained but restricted to the exact upstream repository `DSPCalculator/dsp-calc`, so pushes, tags and PRs in a fork never upload its artifacts to upstream infrastructure. Fork Pages deployments use only the workflow above. The separate tagged Tauri desktop release workflow is retained.
+Only `.github/workflows/pages.yml` is active. All five inherited workflow files are preserved under `.github/disabled-workflows/`, outside the directory GitHub executes. Branch/PR previews, upstream Netlify publishing, the original release-branch Pages deploy, and tagged Tauri releases are disabled. They cannot run on pushes, pull requests, tags, schedules or manual dispatches while archived there.
+
+The Pages workflow listens for branch pushes and checks the repository's current default branch at job time, so a rename from `main` to `master` does not silently stop deployment. Pull requests targeting the default branch still run validation without deployment. Manual runs deploy only when the selected ref is the default branch.
 
 ## UI and saved-data compatibility
 
