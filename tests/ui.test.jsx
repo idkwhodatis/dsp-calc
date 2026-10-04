@@ -55,6 +55,28 @@ function readStore(key) {
 }
 
 describe('calculator UI interactions', () => {
+    it('shows bulk building selectors for numeric facilities and restores their selected building', async () => {
+        const {user, unmount} = renderApp();
+        const expected = Object.entries(default_game_data.factory_data).filter(([factory, list]) =>
+            list.length >= 2 && default_game_data.recipe_data.filter(recipe => recipe['设施'] === Number(factory)).length >= 3);
+        expect(expected.length).toBeGreaterThan(0);
+        expect(screen.getAllByRole('combobox', {name: /批量设置.*建筑/})).toHaveLength(expected.length);
+        const smelter = screen.getByRole('combobox', {name: '批量设置电弧熔炉建筑'});
+        await user.click(smelter);
+        await user.click(screen.getByRole('option', {name: /位面熔炉/}));
+        expect(smelter).toHaveTextContent('位面熔炉');
+        const saved = readStore('auto_scheme').Vanilla;
+        default_game_data.recipe_data.forEach((recipe, index) => {
+            const choice = default_game_data.factory_data[recipe['设施']].findIndex(building => building['名称'] === '位面熔炉');
+            if (choice !== -1) expect(saved.scheme_for_recipe[index]['建筑']).toBe(choice);
+        });
+        await addTarget(user);
+        expect(screen.getByRole('textbox', {name: '铁块工厂数量，等比例调整需求'})).toHaveValue('0.50');
+        unmount();
+        renderApp();
+        expect(screen.getByRole('combobox', {name: '批量设置电弧熔炉建筑'})).toHaveTextContent('位面熔炉');
+    });
+
     it('adds targets with Chinese and pinyin search, merges repeat additions, removes and confirms clear', async () => {
         const {user} = renderApp();
         expect(screen.getByRole('heading', {name: '生产总览'})).toBeInTheDocument();

@@ -9,7 +9,7 @@ function FactorySelect({factory, list}) {
     const set_scheme_data = useContext(SchemeDataSetterContext);
     const game_data = global_state.game_data;
     const scheme_data = global_state.scheme_data;
-    const first = game_data.recipe_data.findIndex(recipe => recipe['设施'] === factory);
+    const first = game_data.recipe_data.findIndex(recipe => recipe['设施'] === Number(factory));
     const current = first >= 0 ? scheme_data.scheme_for_recipe[first]['建筑'] : 0;
 
     function set_factory(building) {
@@ -26,9 +26,9 @@ function FactorySelect({factory, list}) {
     }
 
     return <div className="min-w-0 space-y-1.5">
-        <p className="text-[11px] text-muted-foreground">{factory}</p>
+        <p className="text-[11px] text-muted-foreground">{list[0]['名称']}</p>
         <Select value={String(current)} onValueChange={set_factory}>
-            <SelectTrigger className="h-9 min-w-36 gap-2 bg-background text-xs" aria-label={`批量设置${factory}建筑`}>
+            <SelectTrigger className="h-9 min-w-36 gap-2 bg-background text-xs" aria-label={`批量设置${list[0]['名称']}建筑`}>
                 <SelectValue/>
             </SelectTrigger>
             <SelectContent>
@@ -52,7 +52,7 @@ export function BatchSetting() {
         .map((_effect, index) => index)
         .filter(index => proliferator_price[index] !== -1);
     const factories = Object.entries(game_data.factory_data).filter(([factory, list]) =>
-        list.length >= 2 && game_data.recipe_data.filter(recipe => recipe['设施'] === factory).length >= 3);
+        list.length >= 2 && game_data.recipe_data.filter(recipe => recipe['设施'] === Number(factory)).length >= 3);
 
     function change_pro_num(points) {
         set_scheme_data(previous => {
