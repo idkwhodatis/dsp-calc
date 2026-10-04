@@ -501,8 +501,13 @@ export class GlobalState {
         }//将需求目标添至计算的实际需求列表中
 
         for (let id in natural_production_line) {
-            let recipe = game_data.recipe_data[item_data[natural_production_line[id]["目标物品"]][natural_production_line[id]["配方id"]]];
-            let recipe_time = 60 * natural_production_line[id]["建筑数量"] * game_data.factory_data[recipe["设施"]][natural_production_line[id]["建筑"]]["倍率"] / recipe["时间"];
+            const target_item = natural_production_line[id]["目标物品"];
+            let recipe = game_data.recipe_data[item_data[target_item][natural_production_line[id]["配方id"]]];
+            const factory = game_data.factory_data[recipe["设施"]][natural_production_line[id]["建筑"]];
+            // Legacy fixed-building saves must use the same mining panels and
+            // fractionator belt speed as automatic and migrated source rows.
+            let recipe_time = ApplyBuildingMultiplier(60 * natural_production_line[id]["建筑数量"] * factory["倍率"] / recipe["时间"],
+                factory["名称"], target_item, this.settings);
             if ((natural_production_line[id]["增产点数"] == 0) || (natural_production_line[id]["增产模式"] == 0)) {
                 for (let item in recipe["原料"]) {
                     if (item in in_out_list) {
@@ -524,8 +529,10 @@ export class GlobalState {
                     num += recipe["原料"][item];
                 }
                 num = Number(num) * recipe_time;
-                if (natural_production_line[id]["增产模式"] == 1) {//加速
-                    let pro_time = game_data.proliferator_effect[natural_production_line[id]["增产点数"]]["加速效果"];
+                if (natural_production_line[id]["增产模式"] == 1 || natural_production_line[id]["增产模式"] == 4) {//加速或增产分馏
+                    let pro_time = natural_production_line[id]["增产模式"] == 4
+                        ? natural_production_line[id]["增产点数"] / 10
+                        : game_data.proliferator_effect[natural_production_line[id]["增产点数"]]["加速效果"];
                     for (let item in recipe["原料"]) {
                         if (item in in_out_list) {
                             in_out_list[item] = Number(in_out_list[item]) + recipe["原料"][item] * recipe_time * pro_time;
@@ -716,11 +723,10 @@ export class GlobalState {
                         model.variables[item]["i" + sub_item] = Number(model.variables[item]["i" + sub_item]) - item_price[material]["原料"][sub_item] * item_graph[item]["原料"][material];
                         // console.log(material + model.variables[item]["i" + sub_item]);
                     }
-                    if ("副产物" in item_graph[sub_item] && !(sub_item in lp_item_dict)) {//遍历原料时，如果原料是线规相关物品那么将其视作原矿，不考虑生产时的副产物
-                        for (let sub_product in item_graph[sub_item]["副产物"]) {
-                            model.variables[item]["i" + sub_product] = Number(model.variables[item]["i" + sub_product]) + item_graph[sub_item]["副产物"][sub_product] * item_graph[item]["原料"][material] * item_price[material]["原料"][sub_item];
-                        }//否则生产这个配方时，其原料带来的必要副产物为：配方的此原料数*此原料成本中该物品的数量*单个该物品造成的副产物产出
-                    }
+                    // item_price already includes every nested byproduct as
+                    // negative demand. Adding its recipe's byproducts again
+                    // would double-count supply (for example fire-ice hydrogen
+                    // in the proliferator production chain; upstream #22).
                 }
             }
         }//完善求解器输入的模型

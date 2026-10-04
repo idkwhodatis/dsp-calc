@@ -35,9 +35,9 @@ export function ApplyBuildingMultiplier(output_num, building_name, item, setting
         } else if (item === "氧") {
             output_num *= settings.mining_speed_oxygen;
         } else if (item === "二氧化硫") {
-            output_num *= settings.mining_speed_carbon_dioxide;
-        } else if (item === "二氧化碳") {
             output_num *= settings.mining_speed_sulfur_dioxide;
+        } else if (item === "二氧化碳") {
+            output_num *= settings.mining_speed_carbon_dioxide;
         }
     } else if (building_name === "行星基地") {
         output_num *= settings.enemy_drop_multiple;

@@ -71,6 +71,8 @@ npm run preview
 
 The fixture is deliberately independent of the current UI and solver. If an intentional calculation/data change needs a new baseline, review it explicitly. `node scripts/capture-solver-baseline.mjs` reproduces the original fixture from that Git commit (requires the commit in local history); do not regenerate fixtures merely to make a failing test pass.
 
+The [upstream issue audit](docs/upstream-issue-audit.md) records every open and closed upstream issue reviewed on 2026-10-04, with reproducible bugs distinguished from already-fixed behavior and feature requests. Dedicated regressions cover nested hydrogen byproduct conservation, collection multipliers, strategy loading across all supported mod profiles, and the selected-recipe semantics of surplus avoidance.
+
 ### Verification notes
 
 The refactor has numerical and DOM interaction tests, lint/typechecking, and verified production builds for both `/` and `/dsp-calc/`. The public deployment has been smoke-tested in a desktop browser for item search, production calculations, bulk building selection, themes and the PWA update flow. The item picker uses the original compact icon-grid placement; the overview uses content-sized columns, readable original-scale type/icons, comfortable row spacing and a desktop summary sidebar. Mobile styles have regression coverage, but a real mobile viewport visual check is still recommended; DOM tests do not replace visual review.
