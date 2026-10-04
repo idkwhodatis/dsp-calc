@@ -82,6 +82,34 @@ describe('bidirectional existing-source quantity controls', () => {
         expect(stored().quantity_mode).toBe('rate');
     });
 
+    it('switches fixed-count receivers to the Dark Fog alternative, sprays them and restores the saved plan', async () => {
+        const user = userEvent.setup();
+        const item = '临界光子';
+        mount([source({target_item: item, recipe_choice: 2, quantity_mode: 'buildings', building_quantity: 2.5})], {[item]: 144});
+        expect(input('分配产量', item)).toHaveValue('30.00');
+        await user.click(within(manual(item)).getByRole('button', {name: '临界光子配方 3', exact: true}));
+        expect(input('分配产量', item)).toHaveValue('60.00');
+        await user.click(within(manual(item)).getByRole('button', {name: '接收站透镜喷涂', exact: true}));
+        expect(input('分配产量', item)).toHaveValue('120.00');
+        for (const [tier, rate] of [['II', '90.00'], ['I', '75.00'], ['III', '120.00']]) {
+            await user.click(within(manual(item)).getByRole('button', {name: new RegExp(`增产剂\\s+Mk\\.${tier}$`)}));
+            expect(input('分配产量', item)).toHaveValue(rate);
+            expect(input('工厂数量', item)).toHaveValue('2.50');
+        }
+        expect(stored()).toMatchObject({recipe_choice: 3, quantity_mode: 'buildings', building_quantity: 2.5,
+            output_per_minute: 120, proliferator_mode: 3, proliferator_points: 4});
+        expect(current.state.scheme_data.item_recipe_choices[item]).toBe(1);
+        const saved = structuredClone(createNeedsPlanSnapshot(current.needs, current.state.scheme_data,
+            current.state.settings, current.state.game_data.game_name));
+        act(() => current.setNeeds({'铁块': 60}));
+        act(() => current.loadPlan(saved, 'needs'));
+        expect(stored()).toEqual(saved.settings.production_sources[0]);
+        expect(input('工厂数量', item)).toHaveValue('2.50');
+        expect(input('分配产量', item)).toHaveValue('120.00');
+        expect(within(manual(item)).getByRole('button', {name: '临界光子配方 3', exact: true})).toHaveAttribute('aria-pressed', 'true');
+        expect(current.state.calculate({[item]: 144})[2].sources[0].inputs['黑雾引力透镜']).toBeCloseTo(0.25, 10);
+    });
+
     it('preserves exact count and ownership when a rounded derived field is only focused, blurred, or rejected', async () => {
         const user = userEvent.setup();
         mount([source({quantity_mode: 'buildings', building_quantity: 1.23456789})]);

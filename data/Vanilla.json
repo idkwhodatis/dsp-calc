@@ -6230,6 +6230,29 @@
       "TimeSpend": 360,
       "Proliferator": 3,
       "IconName": "darkfog-lens"
+    },
+    {
+      "ID": 31208,
+      "Type": -1,
+      "Factories": [
+        2208
+      ],
+      "Name": "[射线接收带黑雾透镜]临界光子",
+      "Items": [
+        1211
+      ],
+      "ItemCounts": [
+        0.004166666666666667
+      ],
+      "Results": [
+        1208
+      ],
+      "ResultCounts": [
+        1
+      ],
+      "TimeSpend": 150,
+      "Proliferator": 4,
+      "IconName": "photon-capacitor-full"
     }
   ],
   "items": [

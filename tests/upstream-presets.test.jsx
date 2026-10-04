@@ -148,7 +148,7 @@ describe('upstream #52 strategy menu loading', () => {
         const app = mount();
         await load(app.user);
         const restored = readStore('auto_scheme').Vanilla;
-        expect(restored.scheme_for_recipe).toHaveLength(240);
+        expect(restored.scheme_for_recipe).toHaveLength(241);
         expect(restored.scheme_for_recipe.slice(0, 238)).toEqual(saved.scheme_for_recipe);
         expect(restored.item_recipe_choices).toEqual({...saved.item_recipe_choices, 全息信标: 1, 黑雾引力透镜: 1});
         expect(restored.cost_weight['电力']).toBe(13);
