@@ -17,6 +17,15 @@ export const SORTER_TIERS = Object.freeze([
     Object.freeze({tier: 3, name: '极速分拣器', capacityPerSecond: 6}),
 ]);
 
+// Full Pile Sorter Upgrade VI, 4-layer output. 120 items/s is the effective
+// interface capacity of ONE saturated Mk.III belt across 1–3 cells, not a
+// claim about the sorter's internal maximum or every cargo's actual stack.
+// https://wiki.biligame.com/dsp/集装分拣器
+export const PILE_SORTER_TIERS = Object.freeze([
+    Object.freeze({tier: 4, name: '集装分拣器', capacityPerSecond: 120}),
+]);
+export const PILE_STACK_HEIGHT = 4;
+
 const MOD_REASON = '当前模组组合没有经过版本核验的物流容量数据，暂不推荐具体等级或数量';
 const INVALID_RATE_REASON = '流量必须为有限的非负数，无法可靠估算';
 const BYPRODUCT_REASON = '副产物未追溯到实际来源建筑，无法核算其单台出料分拣器';
@@ -28,6 +37,16 @@ const BASE_ASSUMPTIONS = Object.freeze([
     '并联数量只是流量参考，不是实际布局最少数量；还需核对接口、堆叠研究站、分流和供料',
     '未读取分拣器货物叠加科技与集装分拣器配置，不将升级或集装能力计入推荐',
 ]);
+const PILE_ASSUMPTIONS = Object.freeze([
+    '已启用集装分拣器：原版、集装分拣器改良 6（满级），制造建筑出料按理想 4 层货物估算；不保证每个货物均为 4 层',
+    '传送带：按各来源目标产物毛出料计算，保留同物品回流；不同产物各自计算，不以净供给抵消接口流量',
+    '仅已确认使用分拣器的制造来源按 4 层；采矿、抽水、接收站、分馏塔、采集器、外部供给和未追溯副产物均按 1 层',
+    '传送带基础速度为 6 / 12 / 30 货物每秒；理想 4 层时为 24 / 48 / 120 件每秒；混合来源按各自货物占位相加',
+    '集装分拣器：单台满载建筑的目标产物毛出料；1–3 格、满速蓝带接口按 120 件每秒估算，非分拣器内部绝对速度上限',
+    '不足一台的生产份额也按一台满载产能核算；研究站仅按单个建筑，共用出料接口需另行核对',
+    '这些是理想供料下的流量参考，不保证入料、布局、分流或端口数量；轨道采集器仅折算运抵地表后的带宽',
+]);
+const PILE_INTERFACE_REASON = '满级集装分拣器按 1–3 格、单条满速蓝带接口 120 件/s 估算；实际出料仍受传送带与端口限制';
 
 // An explicit whitelist prevents a new/special factory from silently inheriting
 // a sorter interface. Labs are per individual building, not their shared stack.
@@ -77,6 +96,19 @@ function rateEstimate(rate, tiers, supported) {
     return emptyEstimate('unavailable', MOD_REASON, rate);
 }
 
+/** Mixed stacks occupy separate cargo slots; never grant raw sources free 4x. */
+function pileBeltEstimate(itemsPerSecond, cargoPerSecond, supported) {
+    const estimate = rateEstimate(cargoPerSecond, BELT_TIERS, supported);
+    const averageStack = cargoPerSecond > 0 ? itemsPerSecond / cargoPerSecond : 1;
+    const alternatives = estimate.alternatives.map(option => ({...option,
+        cargoCapacityPerSecond: option.capacityPerSecond,
+        capacityPerSecond: option.capacityPerSecond * averageStack,
+    }));
+    return {...estimate, throughputPerSecond: itemsPerSecond, cargoPerSecond,
+        averageStack, alternatives,
+        recommended: alternatives.find(option => option.tier === estimate.recommended?.tier) || null};
+}
+
 function automaticSource(state, item) {
     const recipeChoice = state.scheme_data.item_recipe_choices[item];
     const recipeId = state.item_data[item]?.[recipeChoice];
@@ -99,7 +131,7 @@ function sorterExclusion(node) {
     return null;
 }
 
-function sourceEstimate(state, source, kind, outputPerSecond, supported) {
+function sourceEstimate(state, source, kind, outputPerSecond, supported, usePileSorter) {
     const result = {
         id: source.id,
         kind,
@@ -107,7 +139,10 @@ function sourceEstimate(state, source, kind, outputPerSecond, supported) {
         outputPerSecond,
         perBuildingPerSecond: null,
         buildings: null,
-        belt: rateEstimate(outputPerSecond, BELT_TIERS, supported),
+        belt: usePileSorter
+            ? {...pileBeltEstimate(outputPerSecond, outputPerSecond, supported), stackHeight: 1, grossKnown: false,
+                reason: '来源尚未核实，暂按已知净供给、1 层货物折算'}
+            : rateEstimate(outputPerSecond, BELT_TIERS, supported),
         sorter: emptyEstimate('unavailable', '来源产能未评估'),
         reason: '',
     };
@@ -131,11 +166,25 @@ function sourceEstimate(state, source, kind, outputPerSecond, supported) {
         const perBuilding = node.output_per_second * node.gross_multiplier;
         result.perBuildingPerSecond = Number.isFinite(perBuilding) ? perBuilding : null;
         const exclusion = sorterExclusion(node);
+        if (usePileSorter) {
+            const stackHeight = supported && !exclusion ? PILE_STACK_HEIGHT : 1;
+            const grossOutput = outputPerSecond * node.gross_multiplier;
+            result.belt = pileBeltEstimate(grossOutput, grossOutput / stackHeight, supported);
+            result.belt.stackHeight = stackHeight;
+            result.belt.grossKnown = true;
+            const stackReason = stackHeight === PILE_STACK_HEIGHT
+                ? '集装分拣器制造出料：理想 4 层；流量为该目标产物毛出料，含同物品回流'
+                : '此来源未采用集装制造出料假设，按 1 层货物折算；不自动获得 4 倍带宽';
+            result.belt.reason = [result.belt.reason, stackReason,
+                node.factory.名称 === '轨道采集器' ? '仅作运抵地表后的带宽折算，轨道采集器自身没有传送带接口' : '',
+            ].filter(Boolean).join('；');
+        }
         if (exclusion) {
             result.reason = exclusion[1];
             result.sorter = emptyEstimate(exclusion[0], exclusion[1], result.perBuildingPerSecond);
         } else {
-            result.sorter = rateEstimate(perBuilding, SORTER_TIERS, supported);
+            result.sorter = rateEstimate(perBuilding, usePileSorter ? PILE_SORTER_TIERS : SORTER_TIERS, supported);
+            if (usePileSorter && supported && result.sorter.status === 'ready') result.sorter.reason = PILE_INTERFACE_REASON;
             result.reason = result.sorter.reason;
             if (node.factory.名称.endsWith('研究站') && Number(state.settings.stack_research_lab) > 1) {
                 const stackReason = '仅按单个研究站满载出料估算；堆叠研究站的共用出料接口尚未评估';
@@ -155,33 +204,53 @@ function sourceEstimate(state, source, kind, outputPerSecond, supported) {
  * Read-only logistics reference. All input amounts are in the current display
  * unit; all returned rates/capacities are physical items/second. Manual sources
  * are the existing engine's source results (not saved per-minute allocations).
- * Belt = aggregate NET target supply. Sorter = most demanding single FULL-LOAD
+ * Baseline belt = aggregate NET supply; enabled pile mode = GROSS target output
+ * converted to cargo slots for each source. Sorter = single FULL-LOAD
  * manufacturing building's GROSS target output, never the aggregate bus flow.
  */
 export function estimateLogistics(state, item, {automaticOutput = 0, manualSources = [], byproductSupply = 0} = {}) {
     const supported = !hasUnsupportedMods(state.game_data);
+    const usePileSorter = state.scheme_data.use_pile_sorter === true;
     const timeUnit = state.settings.is_time_unit_minute ? 60 : 1;
     const warnings = supported ? [] : [MOD_REASON];
-    const sources = [sourceEstimate(state, automaticSource(state, item), 'automatic', Number(automaticOutput) / timeUnit, supported)];
+    const sources = [sourceEstimate(state, automaticSource(state, item), 'automatic', Number(automaticOutput) / timeUnit, supported, usePileSorter)];
     for (const source of manualSources) {
         if (source.target_item !== item) continue;
-        sources.push(sourceEstimate(state, source, 'manual', Number(source.output) / timeUnit, supported));
+        sources.push(sourceEstimate(state, source, 'manual', Number(source.output) / timeUnit, supported, usePileSorter));
     }
     const byproductRate = Number(byproductSupply) / timeUnit;
     if (byproductRate !== 0) {
         sources.push({
             id: `byproduct-${item}`, kind: 'byproduct', factoryName: '',
             outputPerSecond: byproductRate, perBuildingPerSecond: null, buildings: null,
-            belt: rateEstimate(byproductRate, BELT_TIERS, supported),
+            belt: usePileSorter
+                ? {...pileBeltEstimate(byproductRate, byproductRate, supported), stackHeight: 1, grossKnown: false,
+                    reason: '副产物来源未追溯，暂按已知供给、1 层货物折算，不假定集装出料'}
+                : rateEstimate(byproductRate, BELT_TIERS, supported),
             sorter: emptyEstimate('unavailable', BYPRODUCT_REASON), reason: BYPRODUCT_REASON,
         });
     }
     const invalid = sources.some(source => !Number.isFinite(source.outputPerSecond) || source.outputPerSecond < 0);
     const sum = sources.reduce((total, source) => total + source.outputPerSecond, 0);
     const totalPerSecond = !invalid && Number.isFinite(sum) ? sum : null;
-    const belt = totalPerSecond === null
+    let belt = totalPerSecond === null
         ? emptyEstimate('unavailable', INVALID_RATE_REASON)
         : rateEstimate(totalPerSecond, BELT_TIERS, supported);
+    if (usePileSorter && totalPerSecond !== null) {
+        const gross = sources.reduce((total, source) => total + source.belt.throughputPerSecond, 0);
+        const cargo = sources.reduce((total, source) => total + (source.belt.cargoPerSecond ?? source.outputPerSecond), 0);
+        belt = pileBeltEstimate(gross, cargo, supported);
+        if (belt.status === 'ready') {
+            const mixed = sources.some(source => source.outputPerSecond > 0 && source.belt.stackHeight === PILE_STACK_HEIGHT)
+                && sources.some(source => source.outputPerSecond > 0 && source.belt.stackHeight !== PILE_STACK_HEIGHT);
+            belt.reason = mixed
+                ? '混合来源按「4 层制造出料 ÷ 4 + 1 层其它来源」累加货物占位；单条容量是当前来源比例下的等效件数'
+                : '按各来源货物占位合并；请在来源明细中核对毛出料和叠堆条件';
+            if (sources.some(source => source.outputPerSecond > 0 && source.belt.grossKnown === false)) {
+                belt.reason += '；未追溯或无效来源仅按已知净供给、1 层折算，毛出料尚未核实';
+            }
+        }
+    }
     const active = sources.filter(source => source.outputPerSecond !== 0);
     const evaluated = active.filter(source => source.sorter.status === 'ready');
     const unknown = active.filter(source => source.sorter.status === 'unavailable');
@@ -207,7 +276,8 @@ export function estimateLogistics(state, item, {automaticOutput = 0, manualSourc
     if (invalid || totalPerSecond === null) warnings.push(INVALID_RATE_REASON);
     return {
         supported, totalPerSecond, belt, sorter, sources,
-        assumptions: [...BASE_ASSUMPTIONS],
+        ...(usePileSorter ? {usePileSorter: true, beltTitle: '合并毛出料，按来源叠堆'} : {}),
+        assumptions: [...(usePileSorter ? PILE_ASSUMPTIONS : BASE_ASSUMPTIONS)],
         warnings: [...new Set(warnings)],
     };
 }

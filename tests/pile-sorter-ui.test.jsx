@@ -1,0 +1,124 @@
+import '@testing-library/jest-dom/vitest';
+import {afterEach, beforeAll, beforeEach, describe, expect, it, vi} from 'vitest';
+import {cleanup, render, screen, waitFor, within} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import App from '../src/App.jsx';
+import {default_game_data} from '../src/GameData.jsx';
+import {init_scheme_data} from '../src/scheme_data.jsx';
+import {TooltipProvider} from '../src/components/ui/tooltip';
+
+beforeAll(() => {
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+});
+beforeEach(() => {
+    localStorage.clear();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+const toggle = () => screen.getByRole('checkbox', {name: '使用集装分拣器（满级科技）'});
+const readStore = key => JSON.parse(localStorage.getItem(key));
+const logistics = () => screen.getByRole('button', {name: /^铁块物流估算/});
+const production = () => ['产能', '工厂数量'].map(field =>
+    screen.getByRole('textbox', {name: `铁块${field}，等比例调整需求`}).value);
+function renderApp() {
+    return {user: userEvent.setup(), ...render(<TooltipProvider delayDuration={0}><App/></TooltipProvider>)};
+}
+async function loadNamed(user, name, kind = '需求列表') {
+    await user.click(screen.getByTitle(`加载${kind}`));
+    await user.click(screen.getByRole('menuitem', {name, exact: true}));
+}
+async function saveNamed(user, name, kind = '需求列表') {
+    await user.click(screen.getByTitle(`保存${kind}`));
+    const noun = kind === '生产策略' ? '方案' : kind;
+    const dialog = screen.getByRole('dialog', {name: `保存${noun}`});
+    await user.type(within(dialog).getByRole('textbox', {name: `${noun}名称`}), name);
+    await user.click(within(dialog).getByRole('button', {name: '保存', exact: true}));
+}
+
+describe('bulk pile-sorter preset', () => {
+    it('is accessible, updates logistics immediately, preserves production, and supports hover/click/keyboard dismissal', async () => {
+        localStorage.setItem('needs_list', JSON.stringify({Vanilla: {'铁块目标': {'铁块': 6000}}}));
+        const {user} = renderApp();
+        expect(toggle()).not.toBeChecked();
+        expect(toggle()).toHaveAccessibleDescription(/改良 6.*理想 4 层.*不改变产量或建筑数量/);
+        expect(within(screen.getByRole('region', {name: '批量预设'})).getByRole('checkbox')).toBe(toggle());
+        await loadNamed(user, '铁块目标');
+        expect(logistics()).toHaveAccessibleName(/极速传送带 × 4/);
+        const before = production();
+        toggle().focus();
+        await user.keyboard(' ');
+        expect(toggle()).toBeChecked();
+        expect(production()).toEqual(before);
+        expect(logistics()).toHaveClass('w-20');
+        expect(logistics()).toHaveAccessibleName(/满级集装分拣器，按来源叠堆.*极速传送带 × 1.*集装分拣器 × 1/);
+        expect(within(logistics()).getByRole('img', {name: 'inserter-4'})).toBeInTheDocument();
+        await user.hover(logistics());
+        let panel = await screen.findByRole('dialog', {name: '铁块物流估算'});
+        expect(within(panel).getByText(/分拣器按已选集装预设估算/)).toBeInTheDocument();
+        expect(within(panel).getByRole('listitem', {name: '合并毛出料，按来源叠堆 传送带 5 条'})).toHaveTextContent('单条 1440 / min');
+        expect(within(panel).getByRole('listitem', {name: '合并毛出料，按来源叠堆 极速传送带 1 条'})).toHaveTextContent('单条 7200 / min');
+        expect(within(panel).getByText(/不保证每个货物均为 4 层/)).toBeInTheDocument();
+        await user.unhover(logistics());
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        await user.click(logistics());
+        await user.unhover(logistics());
+        panel = screen.getByRole('dialog', {name: '铁块物流估算'});
+        await user.click(within(panel).getByText('需求产线'));
+        const source = within(panel).getByRole('region', {name: '需求产线出料传送带'});
+        expect(within(source).getByText('货物占位 1500.00 / min · 按 4 层')).toBeVisible();
+        await user.keyboard('{Escape}');
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        await waitFor(() => expect(logistics()).toHaveFocus());
+        await user.click(toggle());
+        expect(toggle()).not.toBeChecked();
+        expect(logistics()).toHaveAccessibleName(/极速传送带 × 4/);
+        expect(production()).toEqual(before);
+    });
+
+    it('persists through autosave, reload, named production strategies and complete plans', async () => {
+        localStorage.setItem('needs_list', JSON.stringify({Vanilla: {'铁块目标': {'铁块': 6000}}}));
+        let {user, unmount} = renderApp();
+        await loadNamed(user, '铁块目标');
+        await user.click(toggle());
+        await saveNamed(user, '集装策略', '生产策略');
+        await saveNamed(user, '集装完整方案');
+        expect(readStore('auto_scheme').Vanilla.use_pile_sorter).toBe(true);
+        expect(readStore('scheme_data').Vanilla['集装策略'].use_pile_sorter).toBe(true);
+        expect(readStore('needs_list').Vanilla['集装完整方案'].scheme_data.use_pile_sorter).toBe(true);
+        await user.click(toggle());
+        expect(toggle()).not.toBeChecked();
+        await loadNamed(user, '集装策略', '生产策略');
+        expect(toggle()).toBeChecked();
+        await user.click(toggle());
+        await loadNamed(user, '集装完整方案');
+        expect(toggle()).toBeChecked();
+        expect(logistics()).toHaveAccessibleName(/集装分拣器 × 1/);
+        unmount();
+        ({user} = renderApp());
+        expect(toggle()).toBeChecked();
+        await loadNamed(user, '集装完整方案');
+        expect(logistics()).toHaveAccessibleName(/集装分拣器 × 1/);
+    });
+
+    it('loads old strategies and complete plans with the toggle off instead of inheriting a newer enabled flag', async () => {
+        const oldScheme = init_scheme_data(default_game_data);
+        delete oldScheme.use_pile_sorter;
+        localStorage.setItem('scheme_data', JSON.stringify({Vanilla: {'旧策略': oldScheme}}));
+        localStorage.setItem('needs_list', JSON.stringify({Vanilla: {'旧完整方案': {
+            plan_version: 1, game_name: 'Vanilla', needs_list: {'铁块': 6000}, scheme_data: oldScheme,
+            settings: {production_sources: [], mineralize_list: {}},
+        }}}));
+        const {user} = renderApp();
+        await user.click(toggle());
+        await loadNamed(user, '旧策略', '生产策略');
+        expect(toggle()).not.toBeChecked();
+        await user.click(toggle());
+        await loadNamed(user, '旧完整方案');
+        expect(toggle()).not.toBeChecked();
+        expect(logistics()).toHaveAccessibleName(/极速传送带 × 4/);
+    });
+});

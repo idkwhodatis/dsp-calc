@@ -62,6 +62,7 @@ function validateScheme(scheme, game_info) {
     const game = game_info.game_data;
     scheme = migrateSchemeForGame(scheme, game);
     if (!isStorageRecord(scheme) || !isStorageRecord(scheme.item_recipe_choices)
+        || (Object.hasOwn(scheme, 'use_pile_sorter') && typeof scheme.use_pile_sorter !== 'boolean')
         || !Array.isArray(scheme.scheme_for_recipe)
         || scheme.scheme_for_recipe.length !== game.recipe_data.length
         || !isStorageRecord(scheme.cost_weight)

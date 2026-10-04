@@ -4,6 +4,7 @@ import {SavedPresets} from './components/saved-presets.jsx';
 import {createStrategySnapshot} from './lib/plan-state.js';
 
 const DEFAULT_SCHEME_DATA = {
+    "use_pile_sorter": false,
     "item_recipe_choices": {"氢": 1},
     "scheme_for_recipe": [{"建筑": 0, "增产点数": 0, "增产模式": 0}],
     // 这是示例,实际上cost_weight之后会在init_scheme_data中重置
@@ -76,7 +77,7 @@ export function SchemeStorage() {
 
     return <SavedPresets key={game_name} storageKey="scheme_data" scope={game_name}
                          label="生产策略" noun="方案"
-                         saveDescription="保存配方、建筑、增产与成本策略，以及独立现有产线。若要保存当前目标及配方分叉，请使用需求列表保存完整方案。"
+                         saveDescription="保存配方、建筑、增产、物流估算与成本策略，以及独立现有产线。若要保存当前目标及配方分叉，请使用需求列表保存完整方案。"
                          value={createStrategySnapshot(global_state.scheme_data, global_state.settings)}
                          onLoad={saved => load_plan(saved, 'strategy')}/>;
 }

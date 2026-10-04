@@ -28,6 +28,7 @@ function TierAlternatives({estimate, title, noun, unit, rate, capacity}) {
     return <section className="space-y-2" aria-label={title}>
         <h4 className="text-base font-medium">{title}</h4>
         {Number.isFinite(estimate.throughputPerSecond) && <p className="text-base text-muted-foreground tabular-nums">流量 {rate(estimate.throughputPerSecond)} / {unit}</p>}
+        {Number.isFinite(estimate.cargoPerSecond) && <p className="text-base text-muted-foreground tabular-nums">货物占位 {rate(estimate.cargoPerSecond)} / {unit}{estimate.stackHeight ? ` · 按 ${estimate.stackHeight} 层` : ''}</p>}
         {estimate.alternatives?.length > 0 && <ul className="space-y-1.5">
             {estimate.alternatives.map(option => <li key={option.tier} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-base"
                 aria-label={`${title} ${option.name} ${option.count} ${noun}`}>
@@ -46,6 +47,7 @@ export function LogisticsOverview({item, estimate}) {
     const {settings} = useContext(GlobalStateContext);
     const [open, setOpen] = useState(false);
     const pinned = useRef(false);
+    const trigger = useRef(null);
     const restoreFocus = useRef(false);
     const closeTimer = useRef(null);
     const titleId = useId();
@@ -89,11 +91,11 @@ export function LogisticsOverview({item, estimate}) {
         setOpen(next);
     }
 
-    const label = `${item}物流估算：${recommendationLabel(estimate.belt, '传送带')}；${recommendationLabel(estimate.sorter, '分拣器')}；查看各档并行数量`;
+    const label = `${item}物流估算：${estimate.usePileSorter ? '满级集装分拣器，按来源叠堆；' : ''}${recommendationLabel(estimate.belt, '传送带')}；${recommendationLabel(estimate.sorter, '分拣器')}；查看各档并行数量`;
     let manualOrdinal = 0;
     return <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
-            <Button type="button" variant="ghost" className="dsp-logistics-trigger h-auto min-h-9 w-20 gap-2 px-1 py-1 text-base"
+            <Button ref={trigger} type="button" variant="ghost" className="dsp-logistics-trigger h-auto min-h-9 w-20 gap-2 px-1 py-1 text-base"
                 aria-label={label} onPointerEnter={preview} onPointerLeave={leave} onClick={togglePinned}>
                 <CompactRecommendation estimate={estimate.belt} noun="传送带"/>
                 <CompactRecommendation estimate={estimate.sorter} noun="分拣器"/>
@@ -103,23 +105,30 @@ export function LogisticsOverview({item, estimate}) {
             className="dsp-logistics-popover max-h-[min(70dvh,42rem)] w-[min(28rem,calc(100vw-1.5rem))] space-y-4 overflow-y-auto p-4 text-base"
             aria-labelledby={titleId} aria-describedby={descriptionId}
             onPointerEnter={preview} onPointerLeave={leave}
+            onInteractOutside={event => {
+                // Pinning a hover preview clicks its trigger outside the panel.
+                // Do not count that as outside interaction and lose Escape focus.
+                if (trigger.current?.contains(event.target)) event.preventDefault();
+            }}
             onOpenAutoFocus={event => { if (!pinned.current) event.preventDefault(); }}
             onCloseAutoFocus={event => { if (!restoreFocus.current) event.preventDefault(); restoreFocus.current = false; }}
             onFocusCapture={() => { pinned.current = true; restoreFocus.current = true; clearCloseTimer(); }}>
             <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1"><h3 id={titleId} className="text-base font-semibold">{item}物流估算</h3>
-                    <p id={descriptionId} className="text-base text-muted-foreground">图标为可单路承担流量的最低档；各档数量可作替代方案，非精确布局最小值</p>
+                    <p id={descriptionId} className="text-base text-muted-foreground">{estimate.usePileSorter
+                        ? '传送带图标为可单路承担流量的最低档；分拣器按已选集装预设估算。数量为接口流量参考，非精确布局最小值'
+                        : '图标为可单路承担流量的最低档；各档数量可作替代方案，非精确布局最小值'}</p>
                 </div>
                 <Button type="button" variant="ghost" size="sm" className="h-8 px-1 text-base" aria-label={`关闭${item}物流估算`} onClick={() => onOpenChange(false)}>关闭</Button>
             </div>
-            <TierAlternatives estimate={estimate.belt} title="合并出料流量，未叠堆" noun="条" unit={unit} rate={rate} capacity={capacity}/>
+            <TierAlternatives estimate={estimate.belt} title={estimate.beltTitle || '合并出料流量，未叠堆'} noun="条" unit={unit} rate={rate} capacity={capacity}/>
             <div className="border-t pt-3"><TierAlternatives estimate={estimate.sorter} title="单台满载出料（最繁忙已评估来源）" noun="个" unit={unit} rate={rate} capacity={capacity}/></div>
             {estimate.sources?.length > 0 && <section className="space-y-2 border-t pt-3" aria-label="各来源物流明细">
                 <h4 className="text-base font-medium">各来源</h4>
                 {estimate.sources.map(source => {
                     const label = source.kind === 'automatic' ? '需求产线' : source.kind === 'byproduct' ? '副产物供给' : `现有产线 ${++manualOrdinal}`;
                     return <details key={source.id} className="rounded-md border px-2 py-2">
-                        <summary className="cursor-pointer text-base"><span className="font-medium">{label}</span><span className="ml-2 tabular-nums text-muted-foreground">{rate(source.outputPerSecond)} / {unit}</span></summary>
+                        <summary className="cursor-pointer text-base"><span className="font-medium">{label}</span><span className="ml-2 tabular-nums text-muted-foreground">{estimate.usePileSorter ? '净供给 ' : ''}{rate(source.outputPerSecond)} / {unit}</span></summary>
                         <div className="mt-3 space-y-3">
                             {source.factoryName && <p className="inline-flex items-center gap-2 text-base"><ItemIcon item={source.factoryName} size={26}/>{source.factoryName}</p>}
                             <TierAlternatives estimate={source.belt} title={`${label}出料传送带`} noun="条" unit={unit} rate={rate} capacity={capacity}/>

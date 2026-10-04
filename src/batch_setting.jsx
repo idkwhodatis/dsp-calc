@@ -1,7 +1,8 @@
-import {useContext} from 'react';
+import {useContext, useId} from 'react';
 import {GlobalStateContext, SchemeDataSetterContext} from './contexts.jsx';
 import {ItemIcon} from './icon.jsx';
 import {Button} from './components/ui/button';
+import {Checkbox} from './components/ui/checkbox';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from './components/ui/select';
 
 function FactorySelect({factory, list}) {
@@ -41,6 +42,7 @@ function FactorySelect({factory, list}) {
 }
 
 export function BatchSetting() {
+    const pileSorterId = useId();
     const global_state = useContext(GlobalStateContext);
     const set_scheme_data = useContext(SchemeDataSetterContext);
     const {game_data, scheme_data, proliferator_price} = global_state;
@@ -95,6 +97,15 @@ export function BatchSetting() {
                 </div>
             </div>
             {factories.map(([factory, list]) => <FactorySelect key={factory} factory={factory} list={list}/>)}
+        </div>
+        <div className="mt-4 space-y-1.5 border-t pt-3">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm" htmlFor={pileSorterId}>
+                <Checkbox id={pileSorterId} checked={scheme_data.use_pile_sorter === true}
+                    aria-describedby={`${pileSorterId}-description`}
+                    onCheckedChange={checked => set_scheme_data(previous => ({...previous, use_pile_sorter: checked === true}))}/>
+                使用集装分拣器（满级科技）
+            </label>
+            <p id={`${pileSorterId}-description`} className="text-xs text-muted-foreground">按集装分拣器改良 6、理想 4 层出料估算；仅影响物流参考，不改变产量或建筑数量</p>
         </div>
     </section>;
 }
