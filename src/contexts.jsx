@@ -1,7 +1,7 @@
 import {createContext, useEffect, useState, useMemo} from 'react';
 import {GameInfo, GlobalState} from './global_state';
 import {init_scheme_data} from './scheme_data';
-import {default_game_data, get_game_data, get_mod_options, MoreMegaStructureGUID, TheyComeFromVoidGUID} from "./GameData.jsx";
+import {default_game_data, get_game_data, normalize_mod_list} from "./GameData.jsx";
 import {backupGameDataStorage, getStorageSnapshot, readStorageObject} from "./lib/storage.js";
 import {migrateLegacyProductionSources, synchronizeProductionSourceRates} from './production_sources.js';
 import {normalizeSourceIds} from './lib/source-storage.js';
@@ -124,8 +124,7 @@ export function ContextProvider({children}) {
     // renders a new target with the previous plan's still-active sources.
     const [model, set_model] = useState(() => {
         const saved_mods = safe_parse_json(getStorageSnapshot("auto_mods"));
-        const valid_mods = Array.isArray(saved_mods) ? saved_mods.filter(mod => get_mod_options().some(option => option.value === mod)) : [];
-        if (valid_mods.includes(TheyComeFromVoidGUID) && !valid_mods.includes(MoreMegaStructureGUID)) valid_mods.push(MoreMegaStructureGUID);
+        const valid_mods = normalize_mod_list(saved_mods);
         const game_data = valid_mods.length ? get_game_data(valid_mods) : default_game_data;
         const game_info = new GameInfo(game_data);
         const scheme_data = restore_scheme(game_data);

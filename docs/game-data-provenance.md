@@ -74,3 +74,7 @@ Before an old automatic save is replaced, or an explicit save overwrites an old 
 ## Remaining 0.10.35 work
 
 The original vanilla grid position remains unverified, so Dark Fog Lens stays in **其它**. Full current-build verification is still needed for receiver power output, Dyson demand, exact losses, start-up and interrupted reception, and independent game-code corroboration of the steady-state lens draw. The UI reports the base version and the supported crafting/steady-state scope explicitly; these additions are not a complete current-build export.
+
+## Optional Dark Fog Synthesis profile
+
+The standalone `DarkFogSynthesis` profile appends six author-verified synthesis recipes to this vanilla baseline without changing it. See [the frozen source contract, recipe table and persistence/compatibility boundaries](dark-fog-synthesis.md). Existing other mod profiles remain unchanged.

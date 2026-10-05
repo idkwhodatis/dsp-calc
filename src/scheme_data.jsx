@@ -62,7 +62,9 @@ export function init_scheme_data(game_data) {
         };
     }
     for (let item in item_data) {
-        scheme_data.item_recipe_choices[item] = 1;
+        const preferred = item_data[item].findIndex((recipe, choice) => choice > 0
+            && game_data.default_recipe_ids?.includes(game_data.recipe_ids[recipe]));
+        scheme_data.item_recipe_choices[item] = preferred > 0 ? preferred : 1;
     }
     for (var i = 0; i < game_data.recipe_data.length; i++) {
         scheme_data.scheme_for_recipe.push({"建筑": 0, "增产点数": 0, "增产模式": 0});

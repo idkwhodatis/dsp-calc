@@ -85,6 +85,11 @@ export function estimateThroughput(throughputPerSecond, tiers) {
 }
 
 function hasUnsupportedMods(game) {
+    // This verified append-only recipe profile leaves vanilla belts, sorters,
+    // machine speeds and cargo behavior unchanged. Do not allow unknown mixes.
+    if (game.game_name === 'DarkFogSynthesis' && game.DarkFogSynthesisEnable === true
+        && game.mods?.length === 1 && game.mods[0] === 'DarkFogSynthesis'
+        && !Object.entries(game).some(([key, value]) => key.endsWith('Enable') && key !== 'DarkFogSynthesisEnable' && value === true)) return false;
     return (game.mods || []).some(mod => mod !== 'Vanilla')
         || Object.entries(game).some(([key, value]) => key.endsWith('Enable') && value === true)
         || (game.game_name && game.game_name !== 'Vanilla');

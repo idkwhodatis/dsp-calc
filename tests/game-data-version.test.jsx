@@ -4,7 +4,7 @@ import {useContext, useEffect} from 'react';
 import {act, cleanup, render} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import vanilla from '../data/Vanilla.json';
-import {default_game_data, get_game_data, get_mod_options, vanilla_data_description, vanilla_game_version} from '../src/GameData.jsx';
+import {default_game_data, get_game_data, get_mod_options, DarkFogSynthesisGUID, vanilla_data_description, vanilla_game_version} from '../src/GameData.jsx';
 import {GameInfo, GlobalState} from '../src/global_state.jsx';
 import {init_scheme_data} from '../src/scheme_data.jsx';
 import {ContextProvider, GlobalStateContext, NeedsListContext, PlanLoaderContext, StorageWarningContext} from '../src/contexts.jsx';
@@ -135,7 +135,7 @@ describe('verified vanilla crafting and receiver data increments', () => {
         expect(vanilla_data_description).toContain('黑雾透镜稳态光子接收');
         expect(vanilla_data_description).toContain('至少 20 分钟');
         expect(vanilla_data_description).toContain('未模拟启动、断续接收、戴森功率与损耗');
-        for (const {value} of get_mod_options()) {
+        for (const {value} of get_mod_options().filter(option => option.value !== DarkFogSynthesisGUID)) {
             // Void's bundled profile includes MoreMegaStructure, as required by the selector.
             const mods = value === 'com.ckcz123.DSP_Battle' ? ['Gnimaerd.DSP.plugin.MoreMegaStructure', value] : [value];
             expect(new GameInfo(get_game_data(mods)).item_data['全息信标']).toBeUndefined();
