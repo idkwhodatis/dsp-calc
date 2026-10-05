@@ -4,7 +4,7 @@ import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-libr
 import userEvent from '@testing-library/user-event';
 import vanilla from '../data/Vanilla.json';
 import replicator from '../data/layouts/vanilla-replicator.json';
-import vanillaIcons from '../icon/Vanilla.json';
+const vanillaIcons = import.meta.glob('../icon/Vanilla/*.png', {eager: true, query: '?url', import: 'default'});
 import {buildGamePickerLayout, decodeGameGridIndex} from '../src/lib/game-picker-layout.js';
 import {get_game_data, MoreMegaStructureGUID, TheyComeFromVoidGUID, GenesisBookGUID, FractionateEverythingGUID, DarkFogSynthesisGUID} from '../src/GameData.jsx';
 import {GameInfo} from '../src/global_state.jsx';
@@ -204,7 +204,7 @@ describe('verified F-key crafting layout', () => {
             expect(decodeGameGridIndex(cell.gridIndex)).toEqual({page: cell.page, row: cell.row, col: cell.col});
             const rawItem = vanilla.items.find(item => item.ID === cell.itemId);
             expect(rawItem.Name).toBe(cell.canonicalName);
-            expect(vanillaIcons[cell.iconName], cell.iconName).toBeDefined();
+            expect(vanillaIcons[`../icon/Vanilla/${cell.iconName}.png`], cell.iconName).toBeDefined();
             if (cell.recipeId !== null) {
                 const rawRecipe = vanilla.recipes.find(recipe => recipe.ID === cell.recipeId);
                 expect(rawRecipe.Results, `${cell.recipeId}: ${cell.canonicalName}`).toContain(cell.itemId);
