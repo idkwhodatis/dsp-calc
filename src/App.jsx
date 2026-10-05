@@ -54,7 +54,7 @@ function GameVersion() {
         <DialogTrigger asChild><Button variant="outline" size="sm"><Box className="size-4"/><span>{game_info.game_data.mods.length ? `${game_info.game_data.mods.length} 个模组` : '原版游戏'}</span><ChevronDown className="size-3 text-muted-foreground"/></Button></DialogTrigger>
         <DialogContent className="max-h-[90dvh] overflow-y-auto">
             <DialogHeader><DialogTitle>游戏与模组</DialogTitle><DialogDescription>{vanilla_data_description}</DialogDescription></DialogHeader>
-            <div className="space-y-2 py-2">{options.map(option => <label key={option.value} className={`flex items-center gap-3 rounded-lg border p-3 ${incompatible(option.value) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-accent'}`}><Checkbox disabled={incompatible(option.value)} checked={draft.includes(option.value)} onCheckedChange={checked => toggle(option.value, checked)}/><span className="text-sm font-medium">{option.label}</span></label>)}</div>
+            <div className="space-y-2 py-2">{options.map(option => <label key={option.value} className={`flex items-center gap-3 rounded-lg border p-3 ${incompatible(option.value) ? 'cursor-not-allowed opacity-50' : 'cursor-default hover:bg-accent'}`}><Checkbox disabled={incompatible(option.value)} checked={draft.includes(option.value)} onCheckedChange={checked => toggle(option.value, checked)}/><span className="text-sm font-medium">{option.label}</span></label>)}</div>
             <p className="text-xs leading-relaxed text-muted-foreground">{dark_fog_synthesis_description} 请先取消其它模组，再启用黑雾合成。</p>
             {<p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">切换模组会清空当前需求、现有产线与原矿化列表，并重置对应采集参数。已保存的需求列表和生产策略会按游戏版本保留。深空来敌会自动启用更多巨构。</p>}
             <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>取消</Button><Button onClick={apply} disabled={JSON.stringify(mods) === JSON.stringify(draft)}>应用模组</Button></DialogFooter>
@@ -103,7 +103,7 @@ function AppWithContexts() {
         </Card>
         <Card className="gap-0 py-0 shadow-none">
             <details className="group" open>
-                <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-4 text-sm font-medium sm:px-6"><SlidersHorizontal className="size-4 text-muted-foreground"/>批量生产预设<span className="ml-1 hidden text-xs font-normal text-muted-foreground sm:inline">统一设置建筑与增产策略</span><ChevronDown className="ml-auto size-4 text-muted-foreground transition-transform group-open:rotate-180"/></summary>
+                <summary className="flex cursor-default list-none items-center gap-2 px-4 py-4 text-sm font-medium sm:px-6"><SlidersHorizontal className="size-4 text-muted-foreground"/>批量生产预设<span className="ml-1 hidden text-xs font-normal text-muted-foreground sm:inline">统一设置建筑与增产策略</span><ChevronDown className="ml-auto size-4 text-muted-foreground transition-transform group-open:rotate-180"/></summary>
                 <div className="border-t px-4 py-4 sm:px-6"><BatchSetting/></div>
             </details>
         </Card>

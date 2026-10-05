@@ -128,7 +128,7 @@ export function LogisticsOverview({item, estimate}) {
                 {estimate.sources.map(source => {
                     const label = source.kind === 'automatic' ? '需求产线' : source.kind === 'byproduct' ? '副产物供给' : `现有产线 ${++manualOrdinal}`;
                     return <details key={source.id} className="rounded-md border px-2 py-2">
-                        <summary className="cursor-pointer text-base"><span className="font-medium">{label}</span><span className="ml-2 tabular-nums text-muted-foreground">{estimate.usePileSorter ? '净供给 ' : ''}{rate(source.outputPerSecond)} / {unit}</span></summary>
+                        <summary className="cursor-default text-base"><span className="font-medium">{label}</span><span className="ml-2 tabular-nums text-muted-foreground">{estimate.usePileSorter ? '净供给 ' : ''}{rate(source.outputPerSecond)} / {unit}</span></summary>
                         <div className="mt-3 space-y-3">
                             {source.factoryName && <p className="inline-flex items-center gap-2 text-base"><ItemIcon item={source.factoryName} size={26}/>{source.factoryName}</p>}
                             <TierAlternatives estimate={source.belt} title={`${label}出料传送带`} noun="条" unit={unit} rate={rate} capacity={capacity}/>

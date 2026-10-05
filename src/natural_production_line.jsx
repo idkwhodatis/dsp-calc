@@ -15,7 +15,7 @@ export function PausedProductionSources({sources, onEnable, onRemove}) {
     if (!sources?.length) return null;
     const unit = settings.is_time_unit_minute ? 'min' : 's';
     return <details className="dsp-paused-sources rounded-lg border bg-muted/20 px-3 py-2 text-base">
-        <summary className="cursor-pointer rounded-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring">
+        <summary className="cursor-default rounded-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring">
             已暂停{sources.length}条未被当前需求使用的来源
         </summary>
         <div className="mt-3 space-y-2">
