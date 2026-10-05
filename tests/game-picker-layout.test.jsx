@@ -330,6 +330,8 @@ describe('native crafting picker interaction', () => {
         const info = new GameInfo(get_game_data(mods));
         const layout = buildGamePickerLayout(info);
         const {user, dialog, onSelect} = await openPicker({info});
+        // Reserve desktop scrollbar space so the fourteenth column is visible.
+        expect(dialog).toHaveStyle({width: '743px'});
         expect(within(dialog).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['物品', '建筑']);
         for (const page of layout.pages) {
             await user.click(within(dialog).getByRole('tab', {name: page.label, exact: true}));

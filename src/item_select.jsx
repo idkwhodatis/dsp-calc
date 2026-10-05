@@ -125,7 +125,7 @@ export function ItemSelect({item, set_item, text = '选择物品', icon, disable
             </Button>
         </DialogTrigger>
         <DialogContent className="flex max-h-[90dvh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-hidden p-3 sm:max-w-[calc(100vw-2rem)] sm:p-4"
-                       style={{'--picker-tile-size': `${tileSize}px`, width: `${Math.max(360, layout.columns * (tileSize + 3) - 3 + 68)}px`}}>
+                       style={{'--picker-tile-size': `${tileSize}px`, width: `${Math.max(360, layout.columns * (tileSize + 3) - 3 + (crafting ? 88 : 68))}px`}}>
             <DialogHeader className="shrink-0 gap-1 pr-6 text-left">
                 <DialogTitle className="text-base">选择物品</DialogTitle>
                 <DialogDescription className="text-xs">{crafting ? '按游戏合成面板排列；原矿、掉落等补充物品列在下方。搜索保留格位。' : '保留模组物品分页、行列与空位，支持名称、拼音与首字母搜索。'}</DialogDescription>
