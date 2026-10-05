@@ -66,10 +66,12 @@ function sourceLabel(source, canonical, sources) {
     return ordinal > 0 ? `现有产线 ${ordinal}` : '全局供给';
 }
 
-function NodeNotes({node, canonical, viewModel, settings, unit}) {
+function NodeNotes({node, canonical, viewModel, settings, unit, onShowGlobal}) {
     const source = viewModel.sources?.[node.sourceId];
     const sourceRows = canonical?.hasCanonicalGroup
         ? (canonical.sourceIds || []).map(id => viewModel.sources[id]).filter(Boolean) : [];
+    const coproductRows = (canonical?.coproductSourceIds || []).map(id => viewModel.sources[id])
+        .filter(line => line?.byproducts?.[node.item] > 0);
     const reason = node.reason === 'global-supply'
         ? `${node.boundaryReasons.map(value => BOUNDARIES[value]).filter(Boolean).join('、') || '多路供给'}；${node.scope === 'global' ? '引用全局供给，未指定来源分配' : '引用全局供给，未分配给本支'}`
         : REASONS[node.reason];
@@ -80,9 +82,22 @@ function NodeNotes({node, canonical, viewModel, settings, unit}) {
         {sourceRows.length > 0 && <p className="dsp-dependency-source-summary">全局：{sourceRows.map((line, index) => <span key={line.id}>
             {index > 0 && '；'}{sourceLabel(line, canonical, viewModel.sources)} {formatRate(line.outputRate, settings)} / {unit}
         </span>)}</p>}
+        {coproductRows.length > 0 && <div className="dsp-dependency-byproduct-references space-y-1">
+            <p>副产物来源（已计入全局供给，未指定分支分配）：</p>
+            <ul className="space-y-1">{coproductRows.map(line => {
+                const parent = viewModel.items?.[line.item];
+                const label = `${line.item}${sourceLabel(line, parent || {}, viewModel.sources)}`;
+                return <li key={line.id} data-coproduct-source-id={line.id}>
+                    <span>{label}：<output aria-label={`${node.item}来自${label}的全局副产物供给`}>{formatRate(line.byproducts[node.item], settings)}</output> / {unit}</span>
+                    {parent?.hasCanonicalRow && line.uiId && onShowGlobal && <Button type="button" variant="link"
+                        className="h-auto min-h-8 px-1 py-1 text-base" aria-label={`查看${label}（${node.item}副产物来源）`}
+                        onClick={() => onShowGlobal(line.item, line.uiId)}>查看来源产线</Button>}
+                </li>;
+            })}</ul>
+        </div>}
         {canonical?.surplusRate > 0 && <p>全局溢出 {formatRate(canonical.surplusRate, settings)} / {unit}（非本支需求）</p>}
         {node.omittedInputs?.length > 0 && <p>未展开原料：{node.omittedInputs.map(input => input.item).join('、')}；可查看全局产线</p>}
-        {!reason && !sourceRows.length && !node.shared && node.scope === 'branch' && <p>按本支需求展开</p>}
+        {!reason && !sourceRows.length && !coproductRows.length && !node.shared && node.scope === 'branch' && <p>按本支需求展开</p>}
     </div>;
 }
 
@@ -129,7 +144,7 @@ function DependencyTable({roots, global, viewModel, settings, unit, expanded, on
                         <td className={`${CELL_CLASS} text-right whitespace-nowrap tabular-nums`}>
                             <output aria-label={`${node.item}${rateLabel}`}>{formatRate(node.scope === 'global' ? node.globalRate : node.branchRate, settings)}</output>
                         </td>
-                        <td className={CELL_CLASS}><NodeNotes node={node} canonical={canonical} viewModel={viewModel} settings={settings} unit={unit}/></td>
+                        <td className={CELL_CLASS}><NodeNotes node={node} canonical={canonical} viewModel={viewModel} settings={settings} unit={unit} onShowGlobal={onShowGlobal}/></td>
                         <td className={`${CELL_CLASS} whitespace-nowrap`}><GlobalLink node={node} canonical={canonical} onShowGlobal={onShowGlobal}/></td>
                     </tr>;
                 })}</tbody>

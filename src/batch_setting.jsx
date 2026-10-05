@@ -109,11 +109,16 @@ export function BatchSetting() {
                         <SelectValue/>
                     </SelectTrigger>
                     <SelectContent>
-                        {PILE_SORTER_LEVELS.map(level => <SelectItem key={level} value={String(level)}>{pileSorterLabel(level)}</SelectItem>)}
+                        {PILE_SORTER_LEVELS.map(level => <SelectItem key={level} value={String(level)}>
+                            <span className="flex items-center gap-2">
+                                <span className="flex shrink-0" aria-hidden="true"><ItemIcon item={level === -1 ? '分拣器' : '集装分拣器'} size={22} tooltip={false}/></span>
+                                {pileSorterLabel(level)}
+                            </span>
+                        </SelectItem>)}
                     </SelectContent>
                 </Select>
-                <span id={`${pileSorterId}-description`} className="sr-only">选择集装分拣器改良等级；仅影响理想物流参考，不改变产量或建筑数量</span>
             </div>
         </div>
+        <span id={`${pileSorterId}-description`} className="sr-only">选择集装分拣器改良等级；仅影响理想物流参考，不改变产量或建筑数量</span>
     </section>;
 }

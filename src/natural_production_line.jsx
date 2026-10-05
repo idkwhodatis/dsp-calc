@@ -6,6 +6,7 @@ import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
 import {Button} from './components/ui/button';
 import {Badge} from './components/ui/badge';
 import {cn} from './lib/utils';
+import {Recipe} from './recipe.jsx';
 import {toDisplayRate} from './production_sources.js';
 
 /** Saved demand-bound allocations remain available without creating phantom rows. */
@@ -39,7 +40,7 @@ export function PausedProductionSources({sources, onEnable, onRemove}) {
 /** A production source owns its own recipe and equipment, but stays in its product group. */
 export function ProductionSourceCard({item, source, automatic, ordinal, output, buildings, factory_name,
     recipe_choice, recipe_id, building, proliferator_mode, proliferator_points,
-    onOutputChange, onBuildingsChange, onRecipeChange, onFactoryChange, onModeChange, onPointsChange, onRemove,
+    onOutputChange, onBuildingsChange, onRecipeChange, onRecipeFork, onFactoryChange, onModeChange, onPointsChange, onRemove,
     is_mineralized = false}) {
     const {settings, game_data, item_data} = useContext(GlobalStateContext);
     const knownItem = Object.hasOwn(item_data, item);
@@ -64,7 +65,7 @@ export function ProductionSourceCard({item, source, automatic, ordinal, output, 
     // Each field is a column in one source strip. Only recipes and error text may
     // wrap within their own field; additional sources stack beneath this one.
     return <article className={cn('dsp-source-card dsp-source-strip grid w-max shrink-0 grid-cols-[repeat(8,max-content)] items-start gap-x-5 gap-y-3 rounded-lg border bg-background px-3 py-4 text-base', automatic && 'bg-muted/20')}
-        aria-label={name} data-source-id={automatic ? `auto:${item}` : source.id} data-source-kind={automatic ? 'automatic' : 'manual'}
+        tabIndex={-1} aria-label={name} data-source-id={automatic ? `auto:${item}` : source.id} data-source-kind={automatic ? 'automatic' : 'manual'}
         data-quantity-mode={automatic ? undefined : quantityMode} aria-description={automatic ? undefined : quantityHint}>
         <div data-source-field="identity" className="space-y-1.5 whitespace-nowrap">
             <h3 className="font-medium">{label}</h3>
@@ -95,7 +96,7 @@ export function ProductionSourceCard({item, source, automatic, ordinal, output, 
             </div>
         </div>
         {validRecipe && <><div data-source-field="recipe" className="space-y-1.5"><p className="text-base text-muted-foreground">配方选取</p>
-            <RecipeSelect item={item} choice={recipe_choice} onChange={onRecipeChange} compact="full"/>
+            <RecipeSelect item={item} choice={recipe_choice} onChange={onRecipeChange} onFork={onRecipeFork} compact="full"/>
         </div>
         <div data-source-field="mode" className="space-y-1.5"><p className="text-base text-muted-foreground">增产模式</p>
             <ProModeSelect recipe_id={displayRecipeId} choice={proliferator_mode} onChange={onModeChange}/>
@@ -115,11 +116,44 @@ export function ProductionSourceCard({item, source, automatic, ordinal, output, 
     </article>;
 }
 
-export function ProductionSourceGroup({item, group, totalControl, onAdd, mineralizeControl, children}) {
+/** A read-only reference to output already credited by the calculation. */
+export function ByproductSourceCard({item, source, ordinal, onShowParent}) {
+    const {settings, game_data} = useContext(GlobalStateContext);
+    const unit = settings.is_time_unit_minute ? 'min' : 's';
+    const parentLabel = source.parentKind === 'automatic' ? '需求产线'
+        : source.parentKind === 'legacy' ? '原有产线' : `现有产线 ${source.ordinal}`;
+    const recipe = game_data.recipe_data[source.recipeId];
+    return <article aria-label={`${item}副产来源 ${ordinal}`} data-source-kind="byproduct"
+        data-parent-source-id={source.parentSourceId}
+        className="dsp-byproduct-source flex w-max max-w-5xl flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-dashed bg-muted/20 px-3 py-3 text-base">
+        <div className="space-y-1">
+            <h3 className="flex items-center gap-2 font-medium"><ItemIcon item={source.parentItem} size={28} tooltip={false}/>
+                现有产线 · {source.parentItem}副产</h3>
+            <p className="text-sm text-muted-foreground">{parentLabel} · 已计入供给，随来源产线更新</p>
+        </div>
+        <div className="flex items-center gap-1.5 tabular-nums"><ItemIcon item={item} size={24} tooltip={false}/>
+            <output aria-label={`${item}副产来源 ${ordinal}产量`} className="font-semibold">{source.output.toFixed(settings.fixed_num)}</output>
+            <span className="text-muted-foreground">/ {unit}</span>
+        </div>
+        {recipe && <div className="max-w-96" aria-label={`${item}副产来源 ${ordinal}原配方`}><Recipe recipe={recipe} compact="full"/></div>}
+        <div className="space-y-1">
+            {onShowParent ? <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 text-base"
+                aria-label={`查看${source.parentItem}${parentLabel}（${item}副产来源 ${ordinal}）`} onClick={onShowParent}>
+                {source.factoryName && <ItemIcon item={source.factoryName} size={24} tooltip={false}/>}
+                查看来源产线
+            </Button> : <span className="text-sm text-muted-foreground">来源产线未显示</span>}
+            <p className="text-xs text-muted-foreground">工厂与耗电只在来源处计数</p>
+        </div>
+    </article>;
+}
+
+export function ProductionSourceGroup({item, group, totalControl, onAdd, mineralizeControl, linkedByproductSupply, children}) {
     const {settings} = useContext(GlobalStateContext);
     const fixed = settings.fixed_num;
     const unit = settings.is_time_unit_minute ? 'min' : 's';
     const produced = group.automatic + group.allocated + (group.byproduct_supply || 0);
+    const byproductSupply = linkedByproductSupply ?? (group.byproduct_supply || 0);
+    const externalSupply = Math.max(0, (group.byproduct_supply || 0) - byproductSupply);
 
     return <section id={`production-sources-${item}`} tabIndex={-1} aria-label={`${item}生产来源`} className="dsp-source-group w-max min-w-0 max-w-[calc(100vw-3rem)] scroll-mt-20 space-y-3 py-1 text-base">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
@@ -132,7 +166,8 @@ export function ProductionSourceGroup({item, group, totalControl, onAdd, mineral
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-base text-muted-foreground">
             <span aria-label={`${item}合计生产`}>合计生产 {produced.toFixed(fixed)} / {unit}</span>
-            {(group.byproduct_supply || 0) > 1e-6 && <span>含副产物供给 {group.byproduct_supply.toFixed(fixed)} / {unit}</span>}
+            {byproductSupply > 1e-6 && <span>含副产物供给 {byproductSupply.toFixed(fixed)} / {unit}</span>}
+            {externalSupply > 1e-6 && <span>含外部供给 {externalSupply.toFixed(fixed)} / {unit}</span>}
             {group.surplus > 1e-6 && <span role="status" className="font-medium text-amber-700 dark:text-amber-400">超额分配 / 多余产物 {group.surplus.toFixed(fixed)} / {unit}{group.automatic < 1e-6 ? '，需求产线已降至 0' : ''}</span>}
         </div>
         <div role="region" aria-label={`${item}产线，可横向滚动`} tabIndex={0}

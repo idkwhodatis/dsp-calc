@@ -1,7 +1,7 @@
 import {useContext, useMemo, useState, useEffect, useRef} from 'react';
 import {CompactModeContext, GlobalStateContext, SchemeDataSetterContext, SettingsSetterContext} from './contexts';
 import {ItemIcon} from './icon';
-import {PausedProductionSources, ProductionSourceCard, ProductionSourceGroup} from './natural_production_line';
+import {ByproductSourceCard, PausedProductionSources, ProductionSourceCard, ProductionSourceGroup} from './natural_production_line';
 import {createProductionSource, fromDisplayRate, getProductionEnergy, isItemRequired, isMiningBuilding} from './production_sources.js';
 import {describeRecipe, HorizontalMultiButtonSelect, Recipe} from './recipe';
 import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
@@ -13,6 +13,7 @@ import {Tooltip, TooltipContent, TooltipTrigger} from './components/ui/tooltip';
 import {cn} from './lib/utils';
 import {estimateLogistics} from './logistics.js';
 import {LogisticsOverview} from './logistics_overview.jsx';
+import {buildLinkedByproducts} from './lib/linked-byproducts.js';
 import {buildDependencyView} from './dependency_view.js';
 import {DependencyOverview} from './dependency_overview.jsx';
 import {isPlanOwnedSource, targetIdentity} from './lib/plan-state.js';
@@ -228,19 +229,32 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         ? buildDependencyView(global_state, needs_list, [result_dict, lp_surplus_list, source_details]) : null,
     [view_mode, global_state, needs_list, result_dict, lp_surplus_list, source_details]);
 
-    function show_global_line(item) {
-        pending_global_focus.current = item;
-        set_view_mode('flat');
+    const linked_byproducts = useMemo(() => buildLinkedByproducts(global_state, needs_list,
+        [result_dict, lp_surplus_list, source_details]),
+    [global_state, needs_list, result_dict, lp_surplus_list, source_details]);
+
+    function focus_global_line(item, sourceId) {
+        const row = Array.from(result_ref.current?.querySelectorAll('tr[data-product]') || [])
+            .find(element => element.dataset.product === item);
+        const source = sourceId && Array.from(row?.querySelectorAll('[data-source-id]') || [])
+            .find(element => element.dataset.sourceId === sourceId);
+        const target = source || row;
+        target?.focus({preventScroll: true});
+        target?.scrollIntoView?.({block: 'nearest', inline: 'nearest'});
+    }
+
+    function show_global_line(item, sourceId) {
+        if (view_mode === 'flat') focus_global_line(item, sourceId);
+        else {
+            pending_global_focus.current = {item, sourceId};
+            set_view_mode('flat');
+        }
     }
 
     useEffect(() => {
         if (view_mode !== 'flat' || !pending_global_focus.current) return;
-        const row = Array.from(result_ref.current?.querySelectorAll('tr[data-product]') || [])
-            .find(element => element.dataset.product === pending_global_focus.current);
-        if (row) {
-            row.focus({preventScroll: true});
-            row.scrollIntoView?.({block: 'nearest', inline: 'nearest'});
-        }
+        const {item, sourceId} = pending_global_focus.current;
+        focus_global_line(item, sourceId);
         pending_global_focus.current = null;
     }, [view_mode]);
 
@@ -345,7 +359,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
 
     const production_sources = source_details?.sources || [];
     const source_groups = source_details?.groups || {};
-    const ordered_items = [...new Set([...(source_details?.order || Object.keys(result_dict)), ...Object.keys(source_groups)])];
+    const ordered_items = [...new Set([...(source_details?.order || Object.keys(result_dict)), ...Object.keys(source_groups), ...Object.keys(linked_byproducts.byItem)])];
 
     function add_source(item, recipe_choice = scheme_data.item_recipe_choices[item], focus_new_source = false) {
         const required = isItemRequired(global_state, needs_list, item);
@@ -380,20 +394,34 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         set_settings(previous => ({production_sources: (previous.production_sources || []).filter(source => source.id !== id)}));
     }
 
+    // Mirror flat-row visibility before offering a jump to its physical owner.
+    function is_global_line_visible(item) {
+        if (!has_item(item) || !ordered_items.includes(item)) return false;
+        const manual = production_sources.some(source => source.target_item === item);
+        const linked = Boolean(linked_byproducts.byItem[item]?.length);
+        const output = Math.max(0, result_dict[item] || 0)
+            + Object.values(side_products[item] || {}).reduce((sum, amount) => sum + amount, 0);
+        if (output < 1e-6 && !manual && !linked) return false;
+        const recipe = game_data.recipe_data[item_data[item][scheme_data.item_recipe_choices[item]]];
+        return !(settings.hide_mines && !manual && !linked
+            && (item in mineralize_list || Object.keys(recipe.原料).length < 1));
+    }
+
     let result_table_rows = [];
     for (const i of ordered_items) {
         if (!has_item(i)) continue;
         side_products[i] = side_products[i] || {};
         const item_sources = production_sources.filter(source => source.target_item === i);
+        const byproduct_sources = linked_byproducts.byItem[i] || [];
         const automatic_amount = Math.max(0, result_dict[i] || 0);
         let total = automatic_amount + Object.values(side_products[i]).reduce((a, b) => a + b, 0);
-        if (total < 1e-6 && item_sources.length === 0) continue;
+        if (total < 1e-6 && item_sources.length === 0 && byproduct_sources.length === 0) continue;
         let recipe_id = item_data[i][scheme_data.item_recipe_choices[i]];
         const is_mineralized = i in mineralize_list;
         // External supply has no local factories. Hiding a mining row is only a
         // display preference and must not remove its buildings or grid demand.
         let factory_number = is_mineralized ? 0 : source_details?.automatic?.[i]?.buildings ?? get_factory_number(automatic_amount, i);
-        if (item_sources.length === 0 && settings.hide_mines && (is_mineralized || Object.keys(game_data.recipe_data[recipe_id]["原料"]).length < 1)) {
+        if (item_sources.length === 0 && byproduct_sources.length === 0 && settings.hide_mines && (is_mineralized || Object.keys(game_data.recipe_data[recipe_id]["原料"]).length < 1)) {
             continue;
         }
         let from_side_products = Object.entries(side_products[i]).map(([from, amount]) =>
@@ -439,20 +467,20 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         const logistics = estimateLogistics(global_state, i, {automaticOutput: automatic_amount, manualSources: item_sources,
             byproductSupply: Object.values(side_products[i]).reduce((sum, amount) => sum + amount, 0)});
         const logisticsCell = <td className="dsp-logistics-cell w-24 px-2 py-3"><LogisticsOverview item={i} estimate={logistics}/></td>;
-        if (item_sources.length > 0) {
-            const group = source_groups[i];
+        if (item_sources.length > 0 || byproduct_sources.length > 0) {
+            const group = source_groups[i] || linked_byproducts.groups[i];
             const automatic_scheme = scheme_data.scheme_for_recipe[recipe_id];
             const mineralizeControl = <Button type="button" variant="ghost" size="sm" className="h-8 px-1 text-base text-muted-foreground"
                 aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
                 onClick={() => is_mineralized ? unmineralize(i) : mineralize(i)}>{is_mineralized ? '恢复' : '原矿化'}</Button>;
             result_table_rows.push(<tr key={i} data-product={i} tabIndex={-1} aria-label={`${i}全局产线`} className={cn('dsp-source-group-row border-b last:border-0 focus-visible:outline-2 focus-visible:outline-ring', row_class)}>
                 <td colSpan={8} className="px-2 py-3">
-                    <ProductionSourceGroup item={i} group={group} onAdd={() => add_source(i)} mineralizeControl={mineralizeControl}
+                    <ProductionSourceGroup item={i} group={group} linkedByproductSupply={byproduct_sources.reduce((sum, source) => sum + source.output, 0)} onAdd={() => add_source(i)} mineralizeControl={mineralizeControl}
                         totalControl={<output aria-label={`${i}总需求`} className="text-base font-semibold tabular-nums">{group.required.toFixed(fixed_num)}</output>}>
                         <ProductionSourceCard item={i} automatic output={group.automatic} buildings={factory_number} factory_name={factory_name}
                             recipe_id={recipe_id} recipe_choice={scheme_data.item_recipe_choices[i]} building={automatic_scheme['建筑']}
                             proliferator_mode={automatic_scheme['增产模式']} proliferator_points={automatic_scheme['增产点数']}
-                            onRecipeChange={change_recipe} onFactoryChange={change_factory} onModeChange={change_pro_mode} onPointsChange={change_pro_num}
+                            onRecipeChange={change_recipe} onRecipeFork={item_sources.length === 0 ? value => add_source(i, value, true) : undefined} onFactoryChange={change_factory} onModeChange={change_pro_mode} onPointsChange={change_pro_num}
                             is_mineralized={is_mineralized}/>
                         {item_sources.map((source, index) => <ProductionSourceCard key={source.id} item={i} source={source} ordinal={index + 1}
                             output={source.output} buildings={source.buildings} factory_name={source.factory_name}
@@ -470,6 +498,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                             onModeChange={value => update_source(source.id, {proliferator_mode: Number(value)})}
                             onPointsChange={value => update_source(source.id, {proliferator_points: Number(value)})}
                             onRemove={() => remove_source(source.id)}/>)}
+                        {byproduct_sources.map((source, index) => <ByproductSourceCard key={source.id} item={i} source={source} ordinal={index + 1}
+                            onShowParent={is_global_line_visible(source.parentItem) ? () => show_global_line(source.parentItem, source.parentSourceId) : undefined}/>)}
                     </ProductionSourceGroup>
                 </td>
                 {logisticsCell}

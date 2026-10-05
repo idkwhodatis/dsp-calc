@@ -215,11 +215,11 @@ function synthetic(inputs, production) {
 }
 
 describe('cycle safety and bounded unfolding', () => {
-    it('does not link a coproduct absent from the actual flat-result order', () => {
+    it('links a coproduct to its derived flat source group even when absent from automatic production', () => {
         const {state, calculation} = synthetic({A: {}, B: {}}, {A: 1});
         state.item_graph.A.副产物 = {B: 1};
         const view = buildDependencyView(state, {A: 1, B: 1}, calculation);
-        expect(view.items.B).toMatchObject({byproductRate: 1, hasCanonicalRow: false, hasCanonicalGroup: false});
+        expect(view.items.B).toMatchObject({byproductRate: 1, hasCanonicalRow: true, hasCanonicalGroup: true});
         expect(view.items.A.hasCanonicalRow).toBe(true);
         expect(view.roots[1]).toMatchObject({item: 'B', branchRate: 1, reason: 'global-supply'});
     });

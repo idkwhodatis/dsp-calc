@@ -60,7 +60,8 @@ describe('compact production overview', () => {
         const row = amount.closest('tr');
         expect(row.querySelector('.dsp-item-name')).toHaveClass('sr-only');
         expect(row.querySelector('.dsp-item-name')).toHaveTextContent('铁块');
-        expect(within(row).getAllByRole('cell')).toHaveLength(9);
+        // Linked-source groups span the eight production columns, retaining the ninth logistics column.
+            expect(within(row).getAllByRole('cell').reduce((sum, cell) => sum + cell.colSpan, 0)).toBe(9);
         for (const cell of within(row).getAllByRole('cell')) expect(cell).toHaveClass('px-2', 'py-3');
         expect(within(row).getByRole('button', {name: '位面熔炉'})).toHaveClass('min-h-8', 'min-w-7', 'py-1');
     });
@@ -113,7 +114,8 @@ describe('compact production overview', () => {
         expect(screen.getByRole('textbox', {name: '量子芯片产能，等比例调整需求'})).toHaveValue('60.00');
         expect(container.querySelector('.dsp-result-summary')).toHaveClass('max-w-80');
         for (const row of table.querySelectorAll('tbody > tr')) {
-            expect(within(row).getAllByRole('cell')).toHaveLength(9);
+            // Linked-source groups span the eight production columns, retaining the ninth logistics column.
+            expect(within(row).getAllByRole('cell').reduce((sum, cell) => sum + cell.colSpan, 0)).toBe(9);
         }
         for (const recipe of container.querySelectorAll('.dsp-compact-recipe')) {
             expect(recipe).toHaveClass('w-max', 'max-w-32');

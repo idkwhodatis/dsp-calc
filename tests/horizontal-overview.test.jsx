@@ -37,7 +37,9 @@ const multiRecipe = {原料: {'铁块': 2, '铜块': 3, '硅石': 4}, 产物: {'
 const multiDescription = '铁块 × 2 + 铜块 × 3 + 硅石 × 4 → 电路板 × 5 + 石材 × 7 · 6.25s';
 
 function quantitySnapshot() {
-    return Object.fromEntries(screen.getAllByRole('textbox').map(input => [input.getAttribute('aria-label'), input.value]));
+    // Automatically balanced source-group quantities are read-only outputs.
+    const values = [...screen.getAllByRole('textbox'), ...document.querySelectorAll('[data-source-kind="automatic"] output')];
+    return Object.fromEntries(values.map(input => [input.getAttribute('aria-label'), input.value || input.textContent]));
 }
 function controlSnapshot() {
     const scroll = screen.getByRole('region', {name: '生产结果表，可横向滚动'});

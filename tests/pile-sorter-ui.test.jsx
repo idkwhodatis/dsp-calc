@@ -139,4 +139,21 @@ describe('bulk pile-sorter preset', () => {
         expect(toggle()).toHaveTextContent('无集装');
     });
 
+    it('matches factory spacing and shows Mk.I or pile icons in the trigger and every option', async () => {
+        const {user} = renderApp();
+        const sorter = toggle();
+        expect(sorter.querySelector('[role="img"]').getAttribute('aria-label')).toBe('inserter-1');
+        const field = sorter.parentElement;
+        expect(field.querySelector('.sr-only')).toBeNull();
+        expect(field).toHaveClass('space-y-1.5');
+        await user.click(sorter);
+        const choices = screen.getAllByRole('option');
+        expect(choices).toHaveLength(8);
+        expect(choices.map(option => option.querySelector('[role="img"]').getAttribute('aria-label')))
+            .toEqual(['inserter-1', ...Array(7).fill('inserter-4')]);
+        await user.click(screen.getByRole('option', {name: '集装改良 2 级', exact: true}));
+        expect(toggle().querySelector('[role="img"]').getAttribute('aria-label')).toBe('inserter-4');
+        expect(readStore('auto_scheme').Vanilla.pile_sorter_level).toBe(2);
+    });
+
 });

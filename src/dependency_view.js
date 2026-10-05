@@ -45,6 +45,7 @@ export function buildDependencyView(state, needs, calculation, options = {}) {
             .some(value => value !== undefined && !Number.isFinite(Number(value)));
         return {
             id: `${kind}:${sourceId}`, sourceId, kind, item,
+            uiId: kind === 'automatic' ? `auto:${item}` : kind === 'manual' ? sourceId : null,
             canonicalId: `dependency-source:${encodeURIComponent(kind)}:${encodeURIComponent(sourceId)}`,
             outputRate: positive(line.output), grossRate: positive(line.gross_output ?? line.output),
             inputs: rateRecord(line.inputs), byproducts: rateRecord(line.byproducts),
@@ -103,8 +104,7 @@ export function buildDependencyView(state, needs, calculation, options = {}) {
     }
     const itemOrder = new Set([...Object.keys(needs || {}), ...(details?.order || []), ...Object.keys(production),
         ...Object.keys(details?.groups || {}), ...required.keys(), ...external.keys(), ...primarySources.keys(), ...coproducts.keys()]);
-    const flatOrder = new Set([...(details?.order || Object.keys(production)), ...Object.keys(details?.groups || {})]);
-    const sourceLookup = new Map(sources.map(source => [source.id, source]));
+    const flatOrder = new Set([...(details?.order || Object.keys(production)), ...Object.keys(details?.groups || {}), ...coproducts.keys()]);
     const items = Object.fromEntries([...itemOrder].filter(item => typeof item === 'string').map(item => {
         const lines = primarySources.get(item) || [];
         const automatic = lines.find(line => line.kind === 'automatic');
@@ -122,14 +122,10 @@ export function buildDependencyView(state, needs, calculation, options = {}) {
         const hasManualSources = lines.some(line => line.kind === 'manual');
         const recipeId = state.item_data?.[item]?.[state.scheme_data?.item_recipe_choices?.[item]];
         const recipeInputs = state.game_data?.recipe_data?.[recipeId]?.原料 ?? graph[item]?.原料 ?? {};
-        const flatByproductRate = (coproductSources.get(item) || []).reduce((total, id) => {
-            const source = sourceLookup.get(id);
-            return total + (source.kind === 'manual' || (source.kind === 'automatic' && Object.hasOwn(production, source.item))
-                ? source.byproducts[item] : 0);
-        }, 0);
+        const hasByproductSources = byproductRate > EPSILON;
         const hasCanonicalRow = flatOrder.has(item) && Object.hasOwn(state.item_data || graph, item)
-            && (automaticRate + flatByproductRate >= 1e-6 || hasManualSources)
-            && !(settings.hide_mines && !hasManualSources && (mineralized || !Object.keys(recipeInputs).length));
+            && (positive(production[item]) >= 1e-6 || hasManualSources || hasByproductSources)
+            && !(settings.hide_mines && !hasManualSources && !hasByproductSources && (mineralized || !Object.keys(recipeInputs).length));
         const boundaryReasons = [];
         if (lines.some(line => line.error)) boundaryReasons.push('invalid-source');
         if (manualRate > EPSILON) boundaryReasons.push('manual-supply');
@@ -139,7 +135,7 @@ export function buildDependencyView(state, needs, calculation, options = {}) {
         if (missingRate > 1e-6) boundaryReasons.push('missing-supply');
         return [item, {item, canonicalId: canonicalItemId(item), automaticRate, manualRate, byproductRate, externalRate,
             requiredRate, surplusRate, missingRate, boundaryReasons,
-            mineralized, hasCanonicalRow, hasCanonicalGroup: hasCanonicalRow && hasManualSources,
+            mineralized, hasCanonicalRow, hasCanonicalGroup: hasCanonicalRow && (hasManualSources || hasByproductSources),
             sourceIds: lines.map(line => line.id), coproductSourceIds: coproductSources.get(item) || [],
             automaticSourceId: automatic?.id || null, occurrenceIds: []}];
     }));

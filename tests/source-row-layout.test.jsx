@@ -4,7 +4,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {cleanup, render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {CompactModeContext, ContextProvider, GlobalStateContext} from '../src/contexts.jsx';
-import {ProductionSourceCard, ProductionSourceGroup} from '../src/natural_production_line.jsx';
+import {ByproductSourceCard, ProductionSourceCard, ProductionSourceGroup} from '../src/natural_production_line.jsx';
 import {describeRecipe} from '../src/recipe.jsx';
 import {TooltipProvider} from '../src/components/ui/tooltip';
 
@@ -134,5 +134,17 @@ describe('horizontal production source strips', () => {
         expect(strip.lastElementChild).toBe(alert);
         expect(Array.from(strip.querySelectorAll(':scope > [data-source-field]'), field => field.dataset.sourceField)).toEqual(fieldNames);
         expect(within(strip).getByRole('button', {name: '删除铁块现有产线 1'})).toBeVisible();
+    });
+});
+
+
+describe('read-only coproduct navigation', () => {
+    it('does not offer a no-op jump when the physical parent has no visible row', () => {
+        render(<Provider><ByproductSourceCard item="氢" ordinal={1} source={{parentItem: '石墨烯', parentKind: 'legacy',
+            parentSourceId: 'legacy-hidden', output: 60}}/></Provider>);
+        const card = screen.getByRole('article', {name: '氢副产来源 1'});
+        expect(within(card).getByText('来源产线未显示')).toBeInTheDocument();
+        expect(within(card).queryByRole('button')).not.toBeInTheDocument();
+        expect(within(card).getByLabelText('氢副产来源 1产量')).toHaveTextContent('60.00');
     });
 });
