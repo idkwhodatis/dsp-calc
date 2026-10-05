@@ -36,7 +36,7 @@ describe('flat and dependency view integration', () => {
         for (let repeat = 0; repeat < 3; repeat++) {
             await user.click(treeButton());
             expect(treeButton()).toHaveAttribute('aria-pressed', 'true');
-            expect(screen.getByRole('region', {name: '依赖树只读视图'})).toBeInTheDocument();
+            expect(screen.getByRole('region', {name: '依赖树生产视图'})).toBeInTheDocument();
             expect(screen.queryByRole('region', {name: '生产结果表，可横向滚动'})).not.toBeInTheDocument();
             expect(summary()).toBe(before);
             expect(localStorage.getItem('auto_settings')).toBe(settings);
@@ -49,7 +49,7 @@ describe('flat and dependency view integration', () => {
         unmount();
         ({user} = renderApp());
         expect(flatButton()).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.queryByRole('region', {name: '依赖树只读视图'})).not.toBeInTheDocument();
+        expect(screen.queryByRole('region', {name: '依赖树生产视图'})).not.toBeInTheDocument();
         await user.click(treeButton());
         expect(screen.getByText('添加正数目标需求后可查看依赖树')).toBeInTheDocument();
     });
@@ -66,8 +66,10 @@ describe('flat and dependency view integration', () => {
         await user.click(screen.getByRole('button', {name: '展开磁线圈的上游原料'}));
         expect(screen.getAllByLabelText('铜块本支需求')).toHaveLength(2);
         for (const output of screen.getAllByLabelText('铜块本支需求')) expect(output).toHaveTextContent(/^30.00$/);
-        expect(screen.queryByRole('textbox', {name: /产能，等比例调整需求/})).not.toBeInTheDocument();
+        expect(screen.getAllByRole('textbox', {name: '铜块产能，等比例调整需求'})).toHaveLength(2);
+        for (const input of screen.getAllByRole('textbox', {name: '铜块产能，等比例调整需求'})) expect(input).toHaveValue('60.00');
         expect(summary()).toBe(before);
+        await user.click(screen.getByLabelText('电路板依赖说明'));
         await user.click(screen.getByRole('button', {name: '查看电路板全局产线'}));
         expect(flatButton()).toHaveAttribute('aria-pressed', 'true');
         const row = screen.getByRole('row', {name: '电路板全局产线', exact: true});
@@ -91,9 +93,10 @@ describe('flat and dependency view integration', () => {
         await user.click(treeButton());
         expect(screen.getByLabelText('重氢本支需求')).toHaveTextContent(/^60.00$/);
         expect(screen.getAllByText(/现有产线供给；引用全局供给/).length).toBeGreaterThan(0);
-        expect(screen.queryByRole('textbox', {name: '重氢现有产线 1分配产量'})).not.toBeInTheDocument();
+        for (const input of screen.getAllByRole('textbox', {name: '重氢现有产线 1分配产量'})) expect(input).toHaveValue('30.00');
         expect(summary()).toBe(before);
         const demandTable = screen.getByRole('region', {name: '目标依赖表，可横向滚动'});
+        await user.click(within(demandTable).getByLabelText('重氢依赖说明'));
         await user.click(within(demandTable).getByRole('button', {name: '查看重氢全局产线'}));
         expect(screen.getByRole('row', {name: '重氢全局产线'})).toHaveFocus();
         expect(screen.getByRole('article', {name: '重氢现有产线 1'})).toHaveAttribute('data-source-id', id);
@@ -102,4 +105,21 @@ describe('flat and dependency view integration', () => {
         expect(summary()).toBe(before);
         expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources).toEqual([]);
     });
+
+    it('switches from tree to the flat source group when the sibling target panel requests 查看产线', async () => {
+        const {user} = renderApp();
+        await addItem(user, '电磁矩阵');
+        await user.click(treeButton());
+        await user.click(screen.getByRole('button', {name: '添加现有产线', exact: true}));
+        const dialog = screen.getByRole('dialog', {name: '选择物品'});
+        await user.type(within(dialog).getByRole('searchbox'), '铜块');
+        await user.click(within(dialog).getByRole('button', {name: '选择铜块', exact: true}));
+        expect(treeButton()).toHaveAttribute('aria-pressed', 'true');
+        await user.click(screen.getByRole('link', {name: '查看产线', exact: true}));
+        expect(flatButton()).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('row', {name: '铜块全局产线'})).toHaveFocus();
+        expect(screen.getByRole('region', {name: '铜块生产来源'})).toHaveAttribute('id', 'production-sources-铜块');
+        expect(screen.getByRole('textbox', {name: '铜块现有产线 1分配产量'})).toHaveValue('0.00');
+    });
+
 });

@@ -16,6 +16,7 @@ import {LogisticsOverview} from './logistics_overview.jsx';
 import {buildLinkedByproducts} from './lib/linked-byproducts.js';
 import {buildDependencyView} from './dependency_view.js';
 import {DependencyOverview} from './dependency_overview.jsx';
+import {CanonicalProductionRow, ProductionColumns, ProductionItemName} from './production_result_row.jsx';
 import {isPlanOwnedSource, targetIdentity} from './lib/plan-state.js';
 
 const ValueWithDifference = ({currentValue, previousValue}) => {
@@ -196,7 +197,7 @@ const isEqual = (obj1, obj2) => {
     return true;
 };
 
-export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore_popup, show_building_popup, set_show_building_popup}) {
+export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore_popup, show_building_popup, set_show_building_popup, focus_request}) {
     const global_state = useContext(GlobalStateContext);
     const set_scheme_data = useContext(SchemeDataSetterContext);
     const set_settings = useContext(SettingsSetterContext);
@@ -204,6 +205,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     const result_ref = useRef(null);
     const pending_source_focus = useRef(null);
     const pending_global_focus = useRef(null);
+    const handled_focus_request = useRef(null);
     const [view_mode, set_view_mode] = useState('flat');
     const is_compact = compact_mode !== "full";
     const is_mobile = compact_mode === "mobile";
@@ -260,15 +262,30 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
 
     useEffect(() => {
         if (!pending_source_focus.current) return;
-        const source = Array.from(result_ref.current?.querySelectorAll('[data-source-id]') || [])
-            .find(element => element.dataset.sourceId === pending_source_focus.current);
+        const {id, instanceId} = pending_source_focus.current;
+        const occurrence = instanceId && Array.from(result_ref.current?.querySelectorAll('[data-row-instance]') || [])
+            .find(element => element.dataset.rowInstance === instanceId);
+        const source = Array.from((occurrence || result_ref.current)?.querySelectorAll('[data-source-id]') || [])
+            .find(element => element.dataset.sourceId === id)
+            || Array.from(result_ref.current?.querySelectorAll('[data-source-id]') || []).find(element => element.dataset.sourceId === id);
         const allocation = source?.querySelector('input');
         if (allocation) {
             allocation.focus({preventScroll: true});
             allocation.scrollIntoView?.({block: 'nearest', inline: 'nearest'});
-            pending_source_focus.current = null;
         }
+        // A removed/collapsed occurrence must not trigger a delayed jump later.
+        pending_source_focus.current = null;
     }, [source_details]);
+
+    useEffect(() => {
+        if (!focus_request?.item || handled_focus_request.current === focus_request) return;
+        handled_focus_request.current = focus_request;
+        if (view_mode === 'flat') focus_global_line(focus_request.item);
+        else {
+            pending_global_focus.current = {item: focus_request.item};
+            set_view_mode('flat');
+        }
+    }, [focus_request, view_mode]);
 
     // 用于存储历史值的数组，最多保留两个版本
     const [historyValues, setHistoryValues] = useState([]);
@@ -382,7 +399,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         source.proliferator_mode = Number.isInteger(mode) && mode > 0 && mode <= 4 && (recipe['增产'] & (1 << (mode - 1)))
             ? mode : recipe['增产'] === 8 ? 4 : 0;
         source.proliferator_points = Number.isInteger(points) && game_data.proliferator_effect[points] && global_state.proliferator_price[points] !== -1 ? points : 0;
-        if (focus_new_source) pending_source_focus.current = source.id;
+        if (focus_new_source) pending_source_focus.current = {id: source.id,
+            instanceId: document.activeElement?.closest('[data-row-instance]')?.dataset.rowInstance};
         set_settings(previous => ({production_sources: [...(previous.production_sources || []), source]}));
     }
 
@@ -517,7 +535,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
             <td className="px-2 py-3">
                 <div className="flex items-center gap-1.5 whitespace-nowrap">
                     <ItemIcon item={i} tooltip={is_compact} size={is_mobile ? 24 : 40}/>
-                    <span className={cn("dsp-item-name text-sm font-medium", is_compact && "sr-only")}>{i}</span>
+                    <ProductionItemName item={i} compact={is_compact}/>
                 </div>
             </td>
             <td className="px-2 py-3 text-right">
@@ -678,21 +696,18 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         </div>}
         <div className="dsp-result-layout flex max-w-full items-start gap-4">
             <Card className="dsp-result-table-card w-fit min-w-0 max-w-full flex-[0_1_auto] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
-                {view_mode === 'tree' ? <DependencyOverview key={`${game_data.game_name}:${targetIdentity(needs_list)}`} viewModel={dependency_view} settings={settings} onShowGlobal={show_global_line}/> : <>
+                {view_mode === 'tree' ? <DependencyOverview key={`${game_data.game_name}:${targetIdentity(needs_list)}`} viewModel={dependency_view} settings={settings} onShowGlobal={show_global_line}
+                    canonicalRows={new Map(result_table_rows.map(row => [row.props['data-product'], row]))}/> : <>
                 <p className="border-b bg-muted/20 px-2 py-2 text-sm text-muted-foreground lg:hidden">左右滑动表格，查看配方与生产设置</p>
                 <div className="dsp-result-table-scroll max-h-[70dvh] max-w-full overflow-auto" tabIndex={0} role="region" aria-label="生产结果表，可横向滚动">
                     <table className="dsp-production-table w-auto border-collapse text-base [&_td]:align-middle">
                         <caption className="sr-only">生产链计算结果：产能、工厂、配方、增产设置和物流估算</caption>
                         <thead className="sticky top-0 z-10 border-b bg-muted shadow-[0_1px_0_var(--border)]">
                             <tr className="text-left text-base whitespace-nowrap text-muted-foreground">
-                                <th scope="col" className="px-2 py-3 font-medium">操作</th><th scope="col" className="px-2 py-3 font-medium">物品</th>
-                                <th scope="col" className="px-2 py-3 text-right font-medium">产能 / {unit}</th><th scope="col" className="px-2 py-3 font-medium">工厂数量</th>
-                                <th scope="col" className="px-2 py-3 font-medium">配方选取</th><th scope="col" className="px-2 py-3 font-medium">增产模式</th>
-                                <th scope="col" className="px-2 py-3 font-medium">增产剂</th><th scope="col" className="px-2 py-3 font-medium">工厂类型</th>
-                                <th scope="col" className="w-24 px-2 py-3 font-medium">物流估算</th>
+                                <ProductionColumns unit={unit}/>
                             </tr>
                         </thead>
-                        <tbody>{result_table_rows}
+                        <tbody>{result_table_rows.map(row => <CanonicalProductionRow key={row.key} row={row}/>)}
                             {result_table_rows.length === 0 && <tr><td colSpan={9} className="px-4 py-20 text-center">
                                 <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl border bg-muted/40 text-lg text-muted-foreground" aria-hidden="true">＋</div>
                                 <p className="text-sm font-medium">开始规划你的生产线</p><p className="mt-1.5 text-sm text-muted-foreground">添加目标物品与需求数量，查看完整的生产链与建筑需求</p>

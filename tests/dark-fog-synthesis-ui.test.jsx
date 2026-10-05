@@ -139,7 +139,7 @@ describe('Dark Fog Synthesis profile UI and persistence', () => {
         const summary = screen.getByRole('complementary', {name: '生产统计'}).textContent;
         const saved = localStorage.getItem('auto_scheme');
         await user.click(screen.getByRole('button', {name: '树状', exact: true}));
-        expect(screen.getByRole('region', {name: '依赖树只读视图'})).toBeInTheDocument();
+        expect(screen.getByRole('region', {name: '依赖树生产视图'})).toBeInTheDocument();
         expect(screen.getByLabelText('晶格硅本支需求')).toHaveTextContent(/^120.00$/);
         expect(screen.getByLabelText('钛化玻璃本支需求')).toHaveTextContent(/^60.00$/);
         expect(screen.getByRole('complementary', {name: '生产统计'}).textContent).toBe(summary);

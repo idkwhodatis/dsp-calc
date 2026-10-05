@@ -7,6 +7,7 @@ import {Button} from './components/ui/button';
 import {Badge} from './components/ui/badge';
 import {cn} from './lib/utils';
 import {Recipe} from './recipe.jsx';
+import {ProductionRowInstanceContext} from './production_result_row.jsx';
 import {toDisplayRate} from './production_sources.js';
 
 /** Saved demand-bound allocations remain available without creating phantom rows. */
@@ -148,6 +149,7 @@ export function ByproductSourceCard({item, source, ordinal, onShowParent}) {
 }
 
 export function ProductionSourceGroup({item, group, totalControl, onAdd, mineralizeControl, linkedByproductSupply, children}) {
+    const rowInstance = useContext(ProductionRowInstanceContext);
     const {settings} = useContext(GlobalStateContext);
     const fixed = settings.fixed_num;
     const unit = settings.is_time_unit_minute ? 'min' : 's';
@@ -155,7 +157,7 @@ export function ProductionSourceGroup({item, group, totalControl, onAdd, mineral
     const byproductSupply = linkedByproductSupply ?? (group.byproduct_supply || 0);
     const externalSupply = Math.max(0, (group.byproduct_supply || 0) - byproductSupply);
 
-    return <section id={`production-sources-${item}`} tabIndex={-1} aria-label={`${item}生产来源`} className="dsp-source-group w-max min-w-0 max-w-[calc(100vw-3rem)] scroll-mt-20 space-y-3 py-1 text-base">
+    return <section id={`${rowInstance ? `${rowInstance}-` : ''}production-sources-${item}`} tabIndex={-1} aria-label={`${item}生产来源`} className="dsp-source-group w-max min-w-0 max-w-[calc(100vw-3rem)] scroll-mt-20 space-y-3 py-1 text-base">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                 <div className="flex items-center gap-2"><ItemIcon item={item} size={40} tooltip={false}/><h3 className="text-base font-semibold">{item}</h3></div>

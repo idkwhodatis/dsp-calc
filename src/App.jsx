@@ -68,6 +68,7 @@ function AppWithContexts() {
     const [show_ore_popup, set_show_ore_popup] = useState(false);
     const [show_building_popup, set_show_building_popup] = useState(false);
     const [resetOpen, setResetOpen] = useState(false);
+    const [productionFocusRequest, setProductionFocusRequest] = useState(null);
     const settings = useContext(SettingsContext);
     const storageWarning = useContext(StorageWarningContext);
     const set_settings = useContext(SettingsSetterContext);
@@ -98,7 +99,7 @@ function AppWithContexts() {
                 </div>
                 <CardDescription className="text-xs">添加需要生产的物品，计算原料、建筑与电力需求。配方分叉仅用于当前目标，保存需求列表可保留完整方案。</CardDescription>
             </CardHeader>
-            <CardContent className="p-4 sm:p-6"><NeedsList needs_list={needs_list} set_needs_list={set_needs_list} set_show_ore_popup={set_show_ore_popup} set_show_building_popup={set_show_building_popup}/></CardContent>
+            <CardContent className="p-4 sm:p-6"><NeedsList onShowProductionSource={item => setProductionFocusRequest({item})} needs_list={needs_list} set_needs_list={set_needs_list} set_show_ore_popup={set_show_ore_popup} set_show_building_popup={set_show_building_popup}/></CardContent>
             <div className="flex flex-wrap items-center gap-4 border-t bg-muted/25 px-4 py-3 sm:px-6"><NeedsListStorage/><span className="hidden h-5 border-l sm:block"/><SchemeStorage/><span className="ml-auto hidden items-center gap-1.5 text-[11px] text-muted-foreground xl:flex"><span className={`size-1.5 rounded-full ${storageWarning ? 'bg-amber-500' : 'bg-emerald-500'}`}/>{storageWarning ? '自动保存不可用' : '策略与参数自动保存，分叉需命名保存'}</span></div>
         </Card>
         <Card className="gap-0 py-0 shadow-none">
@@ -107,7 +108,7 @@ function AppWithContexts() {
                 <div className="border-t px-4 py-4 sm:px-6"><BatchSetting/></div>
             </details>
         </Card>
-        <Result needs_list={needs_list} set_needs_list={set_needs_list} show_ore_popup={show_ore_popup} set_show_ore_popup={set_show_ore_popup} show_building_popup={show_building_popup} set_show_building_popup={set_show_building_popup}/>
+        <Result focus_request={productionFocusRequest} needs_list={needs_list} set_needs_list={set_needs_list} show_ore_popup={show_ore_popup} set_show_ore_popup={set_show_ore_popup} show_building_popup={show_building_popup} set_show_building_popup={set_show_building_popup}/>
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t pt-5 pb-2 text-xs text-muted-foreground">
             <div className="flex flex-wrap items-center gap-2"><Cpu className="size-3.5"/><span>{Object.keys(game_info.item_data).length} 种物品 · {game_info.game_data.recipe_data.length} 条配方</span><span className="mx-1">·</span><a href="https://github.com/DSPCalculator/dsp-calc" target="_blank" rel="noreferrer" className="hover:text-foreground">基于 DSPCalculator · MulanPSL-2.0</a></div>
             <div className="flex items-center gap-3"><Dialog><DialogTrigger asChild><Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground"><CircleHelp className="size-3.5"/>关于</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>关于 DSP Calc</DialogTitle><DialogDescription>戴森球计划量化计算器</DialogDescription></DialogHeader><p className="text-sm leading-relaxed">基于 DSPCalculator/dsp-calc 的开源生产规划工具。游戏数据与计算模型遵循上游项目，本分支使用 React 与 shadcn/ui 构建界面。</p><p className="text-sm text-muted-foreground">原作者 QQ：653524123<br/>反馈群：816367922</p><Button variant="outline" asChild><a href="https://space.bilibili.com/16051534" target="_blank" rel="noreferrer">联系原作者</a></Button></DialogContent></Dialog>

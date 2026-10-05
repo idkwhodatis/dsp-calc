@@ -181,16 +181,16 @@ describe('compact read-only dependency overview', () => {
         for (const icon of table.querySelectorAll('[role="img"]')) expect(icon).toHaveStyle({width: mode === 'mobile' ? '24px' : '40px', height: mode === 'mobile' ? '24px' : '40px'});
     });
 
-    it('caps indentation at 40px while keeping thin guides and the true depth accessible', () => {
+    it('caps indentation at 24px while keeping thin guides and the true depth accessible', () => {
         const {container} = show(model([node('铁块', 'depth-one', {depth: 1}), node('铁矿', 'depth-eight', {depth: 8})]));
         const contents = container.querySelectorAll('.dsp-dependency-item-content');
-        expect(contents[0]).toHaveStyle({paddingInlineStart: '8px'});
-        expect(contents[1]).toHaveStyle({paddingInlineStart: '40px'});
+        expect(contents[0]).toHaveStyle({paddingInlineStart: '4px'});
+        expect(contents[1]).toHaveStyle({paddingInlineStart: '24px'});
         const guides = container.querySelectorAll('.dsp-dependency-guides');
         expect(guides[0]).toHaveAttribute('aria-hidden', 'true');
-        expect(guides[0]).toHaveStyle({width: '8px'});
-        expect(guides[1]).toHaveStyle({width: '40px'});
-        expect(guides[1].getAttribute('style')).toContain('7px');
+        expect(guides[0]).toHaveStyle({width: '4px'});
+        expect(guides[1]).toHaveStyle({width: '24px'});
+        expect(guides[1].getAttribute('style')).toContain('3px');
         expect(screen.getByText('第 9 层')).toHaveClass('sr-only');
     });
 

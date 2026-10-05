@@ -2,8 +2,10 @@ import {useContext, useId, useState} from 'react';
 import {CompactModeContext} from './contexts.jsx';
 import {ItemIcon} from './icon.jsx';
 import {Button} from './components/ui/button';
+import {CanonicalProductionRow, ProductionColumns} from './production_result_row.jsx';
 
 const MAX_VISIBLE_ROWS = 200;
+const MAX_PRODUCTION_ROWS = 50;
 const CELL_CLASS = 'px-2 py-3';
 
 function formatRate(value, settings) {
@@ -15,11 +17,11 @@ function formatRate(value, settings) {
 
 function ItemCell({node, expanded, onToggle, iconSize}) {
     const depth = Math.max(0, Number(node.depth) || 0);
-    const indent = Math.min(depth * 8, 40);
+    const indent = Math.min(depth * 4, 24);
     return <td className={`dsp-dependency-item relative ${CELL_CLASS}`}>
         {depth > 0 && <span aria-hidden="true" className="dsp-dependency-guides pointer-events-none absolute inset-y-0 left-2"
-            style={{width: indent, backgroundImage: 'repeating-linear-gradient(to right, transparent 0px, transparent 7px, var(--border) 7px, var(--border) 8px)'}}>
-            <span className="absolute top-1/2 border-t border-border" style={{left: indent - 8, width: 8}}/>
+            style={{width: indent, backgroundImage: 'repeating-linear-gradient(to right, transparent 0px, transparent 3px, var(--border) 3px, var(--border) 4px)'}}>
+            <span className="absolute top-1/2 border-t border-border" style={{left: indent - 4, width: 4}}/>
         </span>}
         <div className="dsp-dependency-item-content relative flex w-max items-center gap-1.5" style={{paddingInlineStart: indent}}>
             {node.children?.length > 0 ? <Button type="button" variant="ghost" className="h-8 w-7 shrink-0 px-0 text-base"
@@ -73,7 +75,7 @@ function NodeNotes({node, canonical, viewModel, settings, unit, onShowGlobal}) {
     const coproductRows = (canonical?.coproductSourceIds || []).map(id => viewModel.sources[id])
         .filter(line => line?.byproducts?.[node.item] > 0);
     const reason = node.reason === 'global-supply'
-        ? `${node.boundaryReasons.map(value => BOUNDARIES[value]).filter(Boolean).join('、') || '多路供给'}；${node.scope === 'global' ? '引用全局供给，未指定来源分配' : '引用全局供给，未分配给本支'}`
+        ? `${(node.boundaryReasons || []).map(value => BOUNDARIES[value]).filter(Boolean).join('、') || '多路供给'}；${node.scope === 'global' ? '引用全局供给，未指定来源分配' : '引用全局供给，未分配给本支'}`
         : REASONS[node.reason];
     return <div className="dsp-dependency-notes max-w-80 space-y-1 text-base text-muted-foreground">
         {node.scope === 'global' && <p>{node.kind === 'supply' ? '全局产出' : '全局投入'}{source && canonical?.hasCanonicalGroup ? ` · ${sourceLabel(source, canonical, viewModel.sources)}` : ''}</p>}
@@ -115,34 +117,97 @@ function visibleRows(roots, expanded) {
     return result;
 }
 
-function DependencyTable({roots, global, viewModel, settings, unit, expanded, onToggle, onShowGlobal, iconSize, tableId}) {
+function rateLabel(node) {
+    return node.scope === 'global' ? node.kind === 'supply' ? '全局产出' : '全局投入' : '本支需求';
+}
+
+/** The narrow tree column never derives factory counts or editable branch values. */
+function BranchCell({node, canonical, viewModel, settings, unit, expanded, onToggle, onShowGlobal}) {
+    const depth = Math.max(0, Number(node.depth) || 0);
+    const indent = Math.min(depth * 4, 24);
+    return <td className={`dsp-dependency-branch relative w-px ${CELL_CLASS}`} aria-label={`${node.item}依赖第${depth + 1}层`}>
+        {depth > 0 && <span aria-hidden="true" className="dsp-dependency-guides pointer-events-none absolute inset-y-0 left-2"
+            style={{width: indent, backgroundImage: 'repeating-linear-gradient(to right, transparent 0px, transparent 3px, var(--border) 3px, var(--border) 4px)'}}>
+            <span className="absolute top-1/2 border-t border-border" style={{left: indent - 4, width: 4}}/>
+        </span>}
+        <div className="dsp-dependency-item-content relative w-max space-y-1" style={{paddingInlineStart: indent}}>
+            <div className="flex items-center gap-1 whitespace-nowrap">
+                {node.children?.length > 0 ? <Button type="button" variant="ghost" className="h-8 w-6 shrink-0 px-0 text-base"
+                    aria-label={`${expanded.has(node.id) ? '收起' : '展开'}${node.item}的上游原料`} aria-expanded={expanded.has(node.id)} onClick={() => onToggle(node.id)}>
+                    <span aria-hidden="true">{expanded.has(node.id) ? '▾' : '▸'}</span>
+                </Button> : <span aria-hidden="true" className="inline-block w-6 shrink-0"/>}
+                {node.kind === 'remaining' ? <span className="text-muted-foreground">全局产线</span>
+                    : <div className="tabular-nums">
+                        <span className="block text-muted-foreground">{rateLabel(node)}</span>
+                        <output aria-label={`${node.item}${rateLabel(node)}`}>{formatRate(node.scope === 'global' ? node.globalRate : node.branchRate, settings)}</output>
+                        <span className="text-muted-foreground"> / {unit}</span>
+                    </div>}
+                <span className="sr-only">{node.item}第 {depth + 1} 层</span>
+            </div>
+            <details className="dsp-dependency-details ml-6 text-base text-muted-foreground">
+                <summary className="w-fit cursor-default whitespace-nowrap" aria-label={`${node.item}依赖说明`}>{node.shared ? '共享 · 说明' : '说明'}</summary>
+                <div className="max-w-80 space-y-1 whitespace-normal pt-1">
+                    {node.kind === 'remaining' ? <p>此物品未出现在当前依赖投影中；保留原有全局产线与操作，不新增需求</p>
+                        : <NodeNotes node={node} canonical={canonical} viewModel={viewModel} settings={settings} unit={unit} onShowGlobal={onShowGlobal}/>}
+                    <p>右侧产能、建筑和来源均为全局值，重复出现不可相加；编辑会修改同一个全局计划</p>
+                    <GlobalLink node={node} canonical={canonical} onShowGlobal={onShowGlobal}/>
+                </div>
+            </details>
+        </div>
+    </td>;
+}
+
+function DependencyTable({roots, global, remaining, viewModel, settings, unit, expanded, onToggle, onShowGlobal, iconSize, tableId, canonicalRows}) {
     const [page, setPage] = useState(0);
+    const full = canonicalRows != null;
+    const pageSize = full ? MAX_PRODUCTION_ROWS : MAX_VISIBLE_ROWS;
     const rows = visibleRows(roots, expanded);
-    const pages = Math.max(1, Math.ceil(rows.length / MAX_VISIBLE_ROWS));
+    const pages = Math.max(1, Math.ceil(rows.length / pageSize));
     const currentPage = Math.min(page, pages - 1);
-    const shown = rows.slice(currentPage * MAX_VISIBLE_ROWS, (currentPage + 1) * MAX_VISIBLE_ROWS);
-    const label = global ? '全局供给与投入' : '目标依赖';
+    const shown = rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+    const label = remaining ? '其余全局产线' : global ? '全局供给与投入' : '目标依赖';
     return <div className="dsp-dependency-table-card w-fit min-w-0 max-w-full overflow-hidden rounded-lg border">
         <div className="dsp-dependency-table-scroll max-h-[70dvh] max-w-full overflow-auto overscroll-x-contain focus-visible:outline-2"
             role="region" aria-label={`${label}表，可横向滚动`} tabIndex={0}>
             <table id={tableId} className="dsp-dependency-table w-auto border-collapse text-base [&_td]:align-middle">
-                <caption className="sr-only">{global ? '全局产线与投入，已计入全局计算，不是新增需求' : '目标依赖只读视图，本支需求不是全局生产量'}</caption>
+                <caption className="sr-only">{full ? '依赖树生产视图，本支需求只读；右侧为可编辑的全局生产信息，重复值不可相加'
+                    : global ? '全局产线与投入，已计入全局计算，不是新增需求' : '目标依赖只读视图，本支需求不是全局生产量'}</caption>
                 <thead className="sticky top-0 z-10 border-b bg-muted shadow-[0_1px_0_var(--border)]">
                     <tr className="text-left whitespace-nowrap text-muted-foreground">
-                        <th scope="col" className={`${CELL_CLASS} font-medium`}>物品</th>
-                        <th scope="col" className={`${CELL_CLASS} text-right font-medium`}>{global ? '全局数量' : '本支需求'} / {unit}</th>
-                        <th scope="col" className={`${CELL_CLASS} font-medium`}>说明 / 全局引用</th>
-                        <th scope="col" className={`${CELL_CLASS} font-medium`}>全局产线</th>
+                        {full ? <>
+                            <th scope="col" className={`${CELL_CLASS} font-medium`}>{remaining ? '全局引用' : global ? '依赖 / 全局数量' : '依赖 / 本支需求'}</th>
+                            <ProductionColumns unit={unit} global/>
+                        </> : <>
+                            <th scope="col" className={`${CELL_CLASS} font-medium`}>物品</th>
+                            <th scope="col" className={`${CELL_CLASS} text-right font-medium`}>{global ? '全局数量' : '本支需求'} / {unit}</th>
+                            <th scope="col" className={`${CELL_CLASS} font-medium`}>说明 / 全局引用</th>
+                            <th scope="col" className={`${CELL_CLASS} font-medium`}>全局产线</th>
+                        </>}
                     </tr>
                 </thead>
                 <tbody>{shown.map(node => {
                     const canonical = viewModel.items?.[node.item];
-                    const rateLabel = node.scope === 'global' ? node.kind === 'supply' ? '全局产出' : '全局投入' : '本支需求';
-                    return <tr key={node.id} id={`${tableId}-${encodeURIComponent(node.id)}`} data-node-id={node.id} data-depth={node.depth}
-                        data-scope={node.scope} className="dsp-dependency-row border-b last:border-0 hover:bg-muted/40">
+                    const rowProps = {id: `${tableId}-${encodeURIComponent(node.id)}`, 'data-node-id': node.id, 'data-depth': node.depth,
+                        'data-scope': node.scope, 'aria-label': `${node.item}依赖第${Math.max(0, Number(node.depth) || 0) + 1}层`,
+                        className: 'dsp-dependency-row border-b last:border-0 hover:bg-muted/40'};
+                    if (full) {
+                        const row = canonicalRows.get(node.item);
+                        const leadingCell = <BranchCell node={node} canonical={canonical} viewModel={viewModel} settings={settings} unit={unit}
+                            expanded={expanded} onToggle={onToggle} onShowGlobal={onShowGlobal}/>;
+                        if (row) return <CanonicalProductionRow key={node.id} row={row} instanceId={`${tableId}-${node.id}`}
+                            rowProps={rowProps} leadingCell={leadingCell}/>;
+                        return <tr key={node.id} {...rowProps}>
+                            {leadingCell}
+                            <td colSpan={9} className={CELL_CLASS}>
+                                <span className="font-medium">{node.item}</span>
+                                <span className="ml-2 text-muted-foreground">此物品没有可显示的全局产线，仅保留依赖引用</span>
+                            </td>
+                        </tr>;
+                    }
+                    return <tr key={node.id} {...rowProps}>
                         <ItemCell node={node} expanded={expanded.has(node.id)} onToggle={() => onToggle(node.id)} iconSize={iconSize}/>
                         <td className={`${CELL_CLASS} text-right whitespace-nowrap tabular-nums`}>
-                            <output aria-label={`${node.item}${rateLabel}`}>{formatRate(node.scope === 'global' ? node.globalRate : node.branchRate, settings)}</output>
+                            <output aria-label={`${node.item}${rateLabel(node)}`}>{formatRate(node.scope === 'global' ? node.globalRate : node.branchRate, settings)}</output>
                         </td>
                         <td className={CELL_CLASS}><NodeNotes node={node} canonical={canonical} viewModel={viewModel} settings={settings} unit={unit} onShowGlobal={onShowGlobal}/></td>
                         <td className={`${CELL_CLASS} whitespace-nowrap`}><GlobalLink node={node} canonical={canonical} onShowGlobal={onShowGlobal}/></td>
@@ -160,14 +225,21 @@ function DependencyTable({roots, global, viewModel, settings, unit, expanded, on
     </div>;
 }
 
-/** Compact, read-only navigation over the calculation's dependency projection. */
-export function DependencyOverview({viewModel, settings, onShowGlobal}) {
+/** Reuse existing global controls beside a bounded, read-only dependency projection. */
+export function DependencyOverview({viewModel, settings, onShowGlobal, canonicalRows}) {
     const compactMode = useContext(CompactModeContext);
     const prefix = useId();
     const [expanded, setExpanded] = useState(() => new Set((viewModel.roots || []).filter(root => root.children?.length).map(root => root.id)));
     const unit = settings.is_time_unit_minute ? 'min' : 's';
     const roots = viewModel.roots || [];
     const supplyRoots = viewModel.supplyRoots || [];
+    const full = canonicalRows != null;
+    const represented = new Set((viewModel.rows || visibleRows([...roots, ...supplyRoots], {
+        has: () => true,
+    })).map(node => node.item));
+    const remainingRoots = full ? [...canonicalRows.keys()].filter(item => !represented.has(item)).map(item => ({
+        id: `remaining:${item}`, item, depth: 0, kind: 'remaining', scope: 'global', children: [],
+    })) : [];
     function toggle(id) {
         setExpanded(previous => {
             const next = new Set(previous);
@@ -176,8 +248,9 @@ export function DependencyOverview({viewModel, settings, onShowGlobal}) {
             return next;
         });
     }
-    const props = {viewModel, settings, unit, expanded, onToggle: toggle, onShowGlobal, iconSize: compactMode === 'mobile' ? 24 : 40};
-    return <section className="dsp-dependency-overview w-fit min-w-0 max-w-full flex-[0_1_auto] space-y-4 p-2 text-base" aria-label="依赖树只读视图">
+    const props = {viewModel, settings, unit, expanded, onToggle: toggle, onShowGlobal, canonicalRows, iconSize: compactMode === 'mobile' ? 24 : 40};
+    return <section className="dsp-dependency-overview w-fit min-w-0 max-w-full flex-[0_1_auto] space-y-4 p-2 text-base" aria-label={full ? '依赖树生产视图' : '依赖树只读视图'}>
+        {full && <p className="max-w-prose text-base text-muted-foreground">每行右侧保留完整生产操作；产能、建筑、来源和物流都是同一个全局计划的值，重复出现不可相加，任一处编辑都会同步全局计划</p>}
         <p className="max-w-prose text-base text-muted-foreground">本支需求只表示当前分支的原料需求；共享物料可在不同分支出现，请勿相加作为全局生产量</p>
         {roots.length > 0 ? <DependencyTable {...props} roots={roots} tableId={`${prefix}-demand`}/>
             : <p className="rounded-lg border px-3 py-4 text-base text-muted-foreground">添加正数目标需求后可查看依赖树</p>}
@@ -185,6 +258,11 @@ export function DependencyOverview({viewModel, settings, onShowGlobal}) {
             <h3 id={`${prefix}-supply-heading`} className="text-base font-semibold">全局供给与投入</h3>
             <p className="max-w-prose text-base text-muted-foreground">以下产线及其投入已计入全局总量，不是新增目标需求；不要与本支需求相加</p>
             <DependencyTable {...props} roots={supplyRoots} global tableId={`${prefix}-supply`}/>
+        </section>}
+        {remainingRoots.length > 0 && <section className="w-fit min-w-0 max-w-full space-y-2" aria-labelledby={`${prefix}-remaining-heading`}>
+            <h3 id={`${prefix}-remaining-heading`} className="text-base font-semibold">其余全局产线</h3>
+            <p className="max-w-prose text-base text-muted-foreground">这些物品未出现在当前依赖投影中，仍保留全部全局信息与操作；不新增需求，也不增加汇总数量</p>
+            <DependencyTable {...props} roots={remainingRoots} global remaining tableId={`${prefix}-remaining`}/>
         </section>}
         {viewModel.limits?.truncated && <p role="status" aria-label="依赖显示限制" className="max-w-prose text-base text-muted-foreground">部分上游已达到显示上限；省略处已标记，可通过全局产线查看实际供给</p>}
         {viewModel.warnings?.includes('legacy-source-details-unavailable') && <p role="status" className="max-w-prose text-base text-muted-foreground">旧版现有产线缺少投入明细，请到平铺视图检查全局供给</p>}

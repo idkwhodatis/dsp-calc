@@ -245,17 +245,15 @@ describe('read-only linked byproduct production cards', () => {
         expect(stored()[0]).toMatchObject({id: 'graphene-a', output_per_minute: 120});
     });
 
-    it('returns from the tree to the linked group and then focuses its original manual parent', async () => {
+    it('shows the linked group directly in the tree and navigates to its original manual parent', async () => {
         const user = userEvent.setup();
         mount({sources: [source('graphene-a', 120)], mode: 'mobile'});
         const before = summary().textContent;
         await user.click(viewButton('树状'));
-        expect(screen.queryByRole('article', {name: /氢副产来源/})).not.toBeInTheDocument();
         const demandTable = screen.getByRole('region', {name: '目标依赖表，可横向滚动'});
-        await user.click(within(demandTable).getByRole('button', {name: '查看氢全局产线'}));
-        expect(screen.getByRole('row', {name: '氢全局产线'})).toHaveFocus();
-        expect(linkedOutput()).toHaveTextContent(/^60.00$/);
-        await user.click(within(linked()).getByRole('button', {name: '查看石墨烯现有产线 1（氢副产来源 1）'}));
+        const treeLink = within(demandTable).getByRole('article', {name: '氢副产来源 1'});
+        expect(within(treeLink).getByLabelText('氢副产来源 1产量')).toHaveTextContent(/^60.00$/);
+        await user.click(within(treeLink).getByRole('button', {name: '查看石墨烯现有产线 1（氢副产来源 1）'}));
         expect(manual()).toHaveFocus();
         expect(summary().textContent).toBe(before);
         expect(stored()).toHaveLength(1);

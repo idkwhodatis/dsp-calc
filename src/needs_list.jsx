@@ -45,7 +45,7 @@ function NeedRow({item, count, unit, onChange, onRemove}) {
     </div>;
 }
 
-export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_show_building_popup}) {
+export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_show_building_popup, onShowProductionSource}) {
     const global_state = useContext(GlobalStateContext);
     const set_settings = useContext(SettingsSetterContext);
     const [count, setCount] = useState('60');
@@ -114,7 +114,9 @@ export function NeedsList({needs_list, set_needs_list, set_show_ore_popup, set_s
         </div>
         {!validCount && <p id={`${countId}-error`} role="alert" className="text-xs text-destructive">请输入大于 0 的有效产量后选择物品。</p>}
         {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
-        {sourceStatus && <p role="status" className="text-sm text-muted-foreground">{sourceStatus} <a className="underline underline-offset-4 hover:text-foreground" href={`#production-sources-${encodeURIComponent(lastSourceItem)}`}>查看产线</a></p>}
+        {sourceStatus && <p role="status" className="text-sm text-muted-foreground">{sourceStatus} <a className="underline underline-offset-4 hover:text-foreground" href={`#production-sources-${encodeURIComponent(lastSourceItem)}`} onClick={event => {
+            if (onShowProductionSource) { event.preventDefault(); onShowProductionSource(lastSourceItem); }
+        }}>查看产线</a></p>}
         {entries.length ? <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {entries.map(([item, amount]) => <NeedRow key={item} item={item} count={amount} unit={unit}
                 onChange={next => set_needs_list({...needs_list, [item]: next})} onRemove={() => remove(item)}/>)}
