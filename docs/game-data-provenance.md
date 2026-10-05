@@ -42,7 +42,7 @@ The [original 80×80 game icon mirrored by BWIKI](https://patchwiki.biligame.com
 - **1 Graviton Lens (1209) + 12 Dark Fog Matrix (5201) → 1 Dark Fog Lens (1211)**
 - **360 ticks / 6 seconds**, no coproducts, Proliferator **3** (extra output and acceleration)
 - Dark Fog Matrix retains the existing drop/raw-source recipe **15201**, with no new mining or crafting source
-- **GridIndex is null**, deliberately recording an unverified position. The picker displays the item in **其它** and search. [ProjectGenesis only says the vanilla slot is next to Graviton Lens](https://github.com/Awbugl/ProjectGenesis/blob/8d6b8abb786323ca0e362f9132da230b968227a9/src/Utils/JsonDataUtils.cs); this does not establish an exact native coordinate
+- **ItemProto GridIndex remains null**, deliberately recording an unverified item/filter-selector position. [ProjectGenesis only says the vanilla slot is next to Graviton Lens](https://github.com/Awbugl/ProjectGenesis/blob/8d6b8abb786323ca0e362f9132da230b968227a9/src/Utils/JsonDataUtils.cs); this does not establish its item-selector coordinate. The Vanilla / standalone Dark Fog Synthesis picker now follows the separate **F-key crafting panel** visual reference, which places recipe **162** at **1606** (items page, row 6, column 6). This presentation-only fixture does not alter the null item GridIndex. See [crafting layout provenance](picker-layout.md)
 
 Manufacturing proliferation is separate from spraying lenses used in ray receivers. Crafting retains its extra-product/acceleration modes; receiving uses the existing receiver-specific spray mode.
 
@@ -73,7 +73,7 @@ Before an old automatic save is replaced, or an explicit save overwrites an old 
 
 ## Remaining 0.10.35 work
 
-The original vanilla grid position remains unverified, so Dark Fog Lens stays in **其它**. Full current-build verification is still needed for receiver power output, Dyson demand, exact losses, start-up and interrupted reception, and independent game-code corroboration of the steady-state lens draw. The UI reports the base version and the supported crafting/steady-state scope explicitly; these additions are not a complete current-build export.
+The vanilla **item/filter-selector** grid position remains unverified. The distinct F-key crafting position is now represented by a pinned community visual reference, not a current game-data export. Full current-build verification is still needed for receiver power output, Dyson demand, exact losses, start-up and interrupted reception, and independent game-code corroboration of the steady-state lens draw. The UI reports the base version and the supported crafting/steady-state scope explicitly; these additions are not a complete current-build export.
 
 ## Optional Dark Fog Synthesis profile
 

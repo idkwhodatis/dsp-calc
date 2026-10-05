@@ -1,4 +1,8 @@
-// The exported game data keeps the native picker coordinates in GridIndex:
+import vanillaReplicator from '../../data/layouts/vanilla-replicator.json';
+
+// ItemProto and RecipeProto use the same coordinate encoding but different
+// layouts. Never infer F-key crafting positions from the exported item grid.
+// The exported game data keeps item/filter coordinates in GridIndex:
 // page * 1000 + row * 100 + column (all one-based). The old icon_grid flattens
 // pages into one long grid and normalizes the origin, so it cannot restore tabs.
 export function decodeGameGridIndex(index) {
@@ -10,6 +14,59 @@ export function decodeGameGridIndex(index) {
 }
 
 export function buildGamePickerLayout(gameInfo) {
+    const mods = gameInfo.game_data?.mods;
+    // get_game_data uses [] for Vanilla and ['DarkFogSynthesis'] for the
+    // standalone synthesis profile. Unknown/legacy consumers and every other
+    // mod profile retain their exported item layout, including extra pages.
+    if (Array.isArray(mods) && mods.every(mod => mod === 'DarkFogSynthesis')) {
+        return buildReplicatorLayout(gameInfo);
+    }
+    return buildExportedItemLayout(gameInfo);
+}
+
+function buildReplicatorLayout(gameInfo) {
+    const targets = new Set(gameInfo.all_target_items ?? []);
+    const placed = new Set();
+    const {rows, columns} = vanillaReplicator;
+    const pages = vanillaReplicator.pageIds.map(pageNumber => {
+        const entries = [];
+        const slots = new Map();
+        const cells = vanillaReplicator.cells.filter(cell => cell.page === pageNumber).map(cell => {
+            let entry;
+            if (cell.canonicalName && targets.has(cell.canonicalName)) {
+                entry = {
+                    item: cell.canonicalName,
+                    itemId: cell.itemId,
+                    recipeId: cell.recipeId,
+                    page: cell.page,
+                    row: cell.row,
+                    col: cell.col,
+                    label: cell.label,
+                    iconName: cell.iconName,
+                };
+                // Recipe alternatives intentionally repeat their target item.
+                // Selecting one still selects only that item, not its recipe.
+                entries.push(entry);
+                slots.set(`${cell.row}:${cell.col}`, entry);
+                placed.add(entry.item);
+            }
+            return {row: cell.row, col: cell.col, entry};
+        });
+        return {
+            id: String(pageNumber),
+            label: pageNumber === 1 ? '物品' : '建筑',
+            rows, columns, entries, slots, cells,
+        };
+    });
+    // Raw resources, Dark Fog drops and any future unpositioned targets stay
+    // reachable in separate rows, without occupying verified crafting holes.
+    const extras = [...targets].filter(item => !placed.has(item)).map(item => ({item}));
+    const names = [...new Set([...pages.flatMap(page => page.entries.map(entry => entry.item)),
+        ...extras.map(entry => entry.item)])];
+    return {layoutKind: 'replicator', pages, columns, names, extras};
+}
+
+function buildExportedItemLayout(gameInfo) {
     const targets = new Set(gameInfo.all_target_items ?? []);
     const rawGrid = gameInfo.game_data?.item_grid;
     const hasRawGrid = rawGrid != null;
@@ -75,5 +132,6 @@ export function buildGamePickerLayout(gameInfo) {
         entries: unpositioned.map(item => ({item})),
         cells: [],
     });
-    return {pages: nativePages, columns, names: nativePages.flatMap(page => page.entries.map(entry => entry.item))};
+    return {layoutKind: 'item-grid', pages: nativePages, columns,
+        names: nativePages.flatMap(page => page.entries.map(entry => entry.item)), extras: []};
 }

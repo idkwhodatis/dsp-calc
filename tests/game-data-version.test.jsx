@@ -173,11 +173,11 @@ describe('verified vanilla crafting and receiver data increments', () => {
             expect(result.buildings['黑雾引力透镜']).toBeCloseTo(count, 10);
         });
 
-    it('keeps the lens selectable with its original icon without guessing a vanilla grid slot', () => {
+    it('uses the verified crafting position for the lens without changing its original exported item slot', () => {
         expect(vanilla.items.find(item => item.ID === 1211)).toEqual({ID: 1211, Type: 3, Name: '黑雾引力透镜',
             GridIndex: null, IconName: 'darkfog-lens'});
         const layout = buildGamePickerLayout(new GameInfo(default_game_data));
-        expect(layout.pages.find(page => page.id === 'other').entries).toContainEqual({item: '黑雾引力透镜'});
+        expect(layout.pages.find(page => page.id === '1').slots.get('6:6')).toMatchObject({item: '黑雾引力透镜', recipeId: 162});
         expect(layout.names.filter(item => item === '黑雾引力透镜')).toHaveLength(1);
         const icon = readFileSync('icon/Vanilla/darkfog-lens.png');
         expect(icon.readUInt32BE(16)).toBe(80);

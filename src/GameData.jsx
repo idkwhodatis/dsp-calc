@@ -106,7 +106,7 @@ export function normalize_mod_list(mods) {
 
 export const default_game_data = get_game_data(["Vanilla"])
 export const vanilla_game_version = game_data_info_list[0].version;
-export const vanilla_data_description = `原版基础数据 v${vanilla_game_version}；仅原版追加已核验的 v0.10.34 全息信标与 v0.10.35 黑雾引力透镜制造配方，并追加黑雾透镜稳态光子接收（默认倍率）：满连续接收（至少 20 分钟）、戴森供能与接收条件充足时，每站 24 个/分钟，喷涂 Mk.I / II / III 为 30 / 36 / 48，透镜均为 0.1 个/分钟。黑雾透镜暂列「其它」；未模拟启动、断续接收、戴森功率与损耗，尚未完整适配 v0.10.35。模组组合仍使用各自原有数据`;
+export const vanilla_data_description = `原版基础数据 v${vanilla_game_version}；仅原版追加已核验的 v0.10.34 全息信标与 v0.10.35 黑雾引力透镜制造配方，并追加黑雾透镜稳态光子接收（默认倍率）：满连续接收（至少 20 分钟）、戴森供能与接收条件充足时，每站 24 个/分钟，喷涂 Mk.I / II / III 为 30 / 36 / 48，透镜均为 0.1 个/分钟。合成面板布局另按已记录的界面参考排列；未模拟启动、断续接收、戴森功率与损耗，尚未完整适配 v0.10.35。模组组合仍使用各自原有数据`;
 
 var name_icon_list;
 

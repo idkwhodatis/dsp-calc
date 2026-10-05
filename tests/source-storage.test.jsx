@@ -53,7 +53,7 @@ async function addSource(user, item = '铁块') {
     await user.click(screen.getByRole('button', {name: '添加现有产线'}));
     const dialog = screen.getByRole('dialog', {name: '选择物品'});
     await user.type(within(dialog).getByRole('searchbox'), item);
-    await user.click(within(dialog).getByRole('button', {name: `选择${item}`, exact: true}));
+    await user.click(within(dialog).getAllByRole('button', {name: `选择${item}`, exact: true})[0]);
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '选择物品'})).not.toBeInTheDocument());
 }
 
@@ -61,7 +61,7 @@ async function addTarget(user, item) {
     await user.click(screen.getByRole('button', {name: '添加需求物品'}));
     const dialog = screen.getByRole('dialog', {name: '选择物品'});
     await user.type(within(dialog).getByRole('searchbox'), item);
-    await user.click(within(dialog).getByRole('button', {name: `选择${item}`, exact: true}));
+    await user.click(within(dialog).getAllByRole('button', {name: `选择${item}`, exact: true})[0]);
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '选择物品'})).not.toBeInTheDocument());
 }
 

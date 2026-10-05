@@ -39,9 +39,9 @@ async function addTarget(user, item = '铁块', query = item, keyboard = false, 
     const dialog = screen.getByRole('dialog', {name: '选择物品'});
     const search = within(dialog).getByRole('searchbox', {name: '搜索物品，支持中文和拼音'});
     await user.type(search, query);
-    expect(within(dialog).getByRole('button', {name: `选择${item}`, exact: true})).toBeInTheDocument();
+    expect(within(dialog).getAllByRole('button', {name: `选择${item}`, exact: true})[0]).toBeInTheDocument();
     if (keyboard) await user.keyboard('{Enter}');
-    else await user.click(within(dialog).getByRole('button', {name: `选择${item}`, exact: true}));
+    else await user.click(within(dialog).getAllByRole('button', {name: `选择${item}`, exact: true})[0]);
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '选择物品'})).not.toBeInTheDocument());
 }
 

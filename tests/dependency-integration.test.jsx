@@ -19,7 +19,7 @@ async function addItem(user, item) {
     await user.click(screen.getByRole('button', {name: '添加需求物品', exact: true}));
     const dialog = screen.getByRole('dialog', {name: '选择物品'});
     await user.type(within(dialog).getByRole('searchbox'), item);
-    await user.click(within(dialog).getByRole('button', {name: `选择${item}`, exact: true}));
+    await user.click(within(dialog).getAllByRole('button', {name: `选择${item}`, exact: true})[0]);
 }
 const flatButton = () => within(screen.getByRole('group', {name: '生产结果视图'})).getByRole('button', {name: '平铺'});
 const treeButton = () => within(screen.getByRole('group', {name: '生产结果视图'})).getByRole('button', {name: '树状'});

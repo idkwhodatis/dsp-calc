@@ -98,3 +98,9 @@ export function ItemIcon({item, size, tooltip}) {
     }
     return img;
 }
+
+// Recipe-grid artwork can differ from the ordinary product icon.
+export function GameIcon({icon, size = 40}) {
+    const global_state = useContext(GlobalStateContext);
+    return <Icon icon={icon} size={size} mods={global_state.game_data.mods}/>;
+}
