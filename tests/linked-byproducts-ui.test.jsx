@@ -128,7 +128,7 @@ describe('read-only linked byproduct production cards', () => {
         expect(within(group).getByText('含外部供给 20.00 / min')).toBeInTheDocument();
         expect(within(group).getByLabelText('氢合计生产')).toHaveTextContent('80.00 / min');
         expect(within(group).getByText(/超额分配/)).toHaveTextContent('多余产物 20.00 / min');
-        expect(screen.getAllByRole('article', {name: /氢副产来源/})).toHaveLength(1);
+        expect(screen.getAllByRole('article', {name: /^氢副产来源/})).toHaveLength(1);
     });
 
     it('focuses an automatic parent in the same flat view without changing settings or totals', async () => {
@@ -153,7 +153,7 @@ describe('read-only linked byproduct production cards', () => {
         expect(linkedOutput(2)).toHaveTextContent(/^90.00$/);
         expect(linked(1)).toHaveAttribute('data-parent-source-id', 'graphene-a');
         expect(linked(2)).toHaveAttribute('data-parent-source-id', 'graphene-b');
-        expect(screen.getAllByRole('article', {name: /氢副产来源/})).toHaveLength(2);
+        expect(screen.getAllByRole('article', {name: /^氢副产来源/})).toHaveLength(2);
         expect(stored().map(entry => entry.id)).toEqual(['graphene-a', 'graphene-b']);
         const chemicalPlants = within(summary()).getByText('化工厂', {exact: true}).closest('tr');
         expect(within(chemicalPlants).getAllByRole('cell')[1]).toHaveTextContent(/^4.00$/);
@@ -171,13 +171,13 @@ describe('read-only linked byproduct production cards', () => {
         expect(screen.getByLabelText('氢总需求')).toHaveTextContent(/^200.00$/);
         expect(screen.getByLabelText('氢需求产线产量')).toHaveTextContent(/^60.00$/);
         await user.click(within(manual()).getByRole('button', {name: '删除石墨烯现有产线 1'}));
-        expect(screen.getAllByRole('article', {name: /氢副产来源/})).toHaveLength(1);
+        expect(screen.getAllByRole('article', {name: /^氢副产来源/})).toHaveLength(1);
         expect(linked()).toHaveAttribute('data-parent-source-id', 'graphene-b');
         expect(linkedOutput()).toHaveTextContent(/^90.00$/);
         expect(screen.getByLabelText('氢需求产线产量')).toHaveTextContent(/^110.00$/);
         expect(within(linked()).getByRole('button', {name: '查看石墨烯现有产线 1（氢副产来源 1）'})).toBeEnabled();
         await user.click(within(manual()).getByRole('button', {name: '删除石墨烯现有产线 1'}));
-        expect(screen.queryByRole('article', {name: /氢副产来源/})).not.toBeInTheDocument();
+        expect(screen.queryByRole('article', {name: /^氢副产来源/})).not.toBeInTheDocument();
         expect(screen.queryByRole('region', {name: '氢生产来源'})).not.toBeInTheDocument();
         expect(screen.getByRole('textbox', {name: '氢产能，等比例调整需求'})).toHaveValue('200.00');
         expect(stored()).toEqual([]);
@@ -188,10 +188,10 @@ describe('read-only linked byproduct production cards', () => {
         mount({sources: [source('graphene-a', 120)], automaticGraphene: 1});
         expect(linkedOutput()).toHaveTextContent(/^60.00$/);
         await user.click(within(manual()).getByRole('button', {name: '石墨烯配方 1', exact: true}));
-        expect(screen.queryByRole('article', {name: /氢副产来源/})).not.toBeInTheDocument();
+        expect(screen.queryByRole('article', {name: /^氢副产来源/})).not.toBeInTheDocument();
         expect(screen.getByRole('textbox', {name: '氢产能，等比例调整需求'})).toHaveValue('100.00');
         await user.click(within(manual()).getByRole('button', {name: '石墨烯配方 2', exact: true}));
-        expect(screen.getAllByRole('article', {name: /氢副产来源/})).toHaveLength(1);
+        expect(screen.getAllByRole('article', {name: /^氢副产来源/})).toHaveLength(1);
         expect(linked()).toHaveAttribute('data-parent-source-id', 'graphene-a');
         expect(linkedOutput()).toHaveTextContent(/^60.00$/);
         expect(stored()).toHaveLength(1);
@@ -221,9 +221,9 @@ describe('read-only linked byproduct production cards', () => {
         expect(JSON.stringify(saved)).not.toContain('byproduct:');
         for (let iteration = 0; iteration < 2; iteration++) {
             act(() => current.setNeeds({'铁块': 60}));
-            expect(screen.queryByRole('article', {name: /氢副产来源/})).not.toBeInTheDocument();
+            expect(screen.queryByRole('article', {name: /^氢副产来源/})).not.toBeInTheDocument();
             act(() => current.loadPlan(saved, 'needs'));
-            expect(screen.getAllByRole('article', {name: /氢副产来源/})).toHaveLength(2);
+            expect(screen.getAllByRole('article', {name: /^氢副产来源/})).toHaveLength(2);
             expect(linkedOutput(1)).toHaveTextContent(/^30.00$/);
             expect(linkedOutput(2)).toHaveTextContent(/^30.00$/);
             expect(stored()).toEqual(saved.settings.production_sources);

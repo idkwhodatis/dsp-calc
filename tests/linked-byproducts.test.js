@@ -35,7 +35,13 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('read-only linked byproduct sources', () => {
     it('derives graphene 120 → hydrogen 60 from the legacy graph with remaining automatic hydrogen', () => {
-        const state = make({recipes: {石墨烯: 2}});
+        const base = make({recipes: {石墨烯: 2}});
+        // Keep this fallback-graph test outside the coupled orbital solver.
+        const scheme = structuredClone(base.scheme_data);
+        const hydrogenRecipe = base.item_data.氢[scheme.item_recipe_choices.氢];
+        const factories = base.game_data.factory_data[base.game_data.recipe_data[hydrogenRecipe].设施];
+        scheme.scheme_for_recipe[hydrogenRecipe].建筑 = factories.findIndex(factory => factory.名称 === '行星基地');
+        const state = new GlobalState(new GameInfo(base.game_data), scheme, base.settings);
         const needs = {石墨烯: 120, 氢: 100};
         const calculation = state.calculate(needs);
         expect(calculation).toHaveLength(2);

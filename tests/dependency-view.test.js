@@ -85,10 +85,12 @@ describe('readonly dependency-demand projection', () => {
         expect(lines.map(line => line.inputs.氢 || 0)).toEqual([300, 100, 50, 0]);
         expect(lines.filter(line => line.kind === 'manual').map(line => line.ordinal)).toEqual([1, 2, 3]);
         expect(view.supplyRoots.filter(row => row.item === '重氢')).toHaveLength(4);
-        expect(view.items.氢).toMatchObject({requiredRate: 450, automaticRate: 0, byproductRate: 450});
-        const oil = view.supplyRoots.find(row => row.item === '精炼油');
-        expect(oil.globalRate).toBe(900);
-        expect(oil.children[0]).toMatchObject({item: '原油', globalRate: 900});
+        expect(view.items.氢.requiredRate).toBe(450);
+        expect(view.items.氢.automaticRate).toBe(0);
+        expect(view.items.氢.byproductRate).toBeCloseTo(1000, 7);
+        expect(view.items.氢.surplusRate).toBeCloseTo(550, 7);
+        // The manual D collectors already supply H, so oil refining is unnecessary.
+        expect(view.supplyRoots.find(row => row.item === '精炼油')).toBeUndefined();
         expect(view.supplyRoots.some(row => row.item === '原油')).toBe(false);
         expect(view.items.氢.coproductSourceIds).toHaveLength(1);
     });

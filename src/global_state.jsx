@@ -1,5 +1,6 @@
 import {ApplyBuildingMultiplier} from "./building_multipliers.js";
 import {calculateProductionSources} from "./production_sources.js";
+import {needsOrbitalCollectorCalculation} from "./orbital_collectors.js";
 export {ApplyBuildingMultiplier} from "./building_multipliers.js";
 import solver from "javascript-lp-solver";
 
@@ -458,12 +459,18 @@ export class GlobalState {
 
     /** Automatic-only demand baseline for source activation and UI intent. */
     calculateBaseline(needs_list) {
-        return this.#calculateLegacy(needs_list, true);
+        const legacy = this.#calculateLegacy(needs_list, true);
+        return needsOrbitalCollectorCalculation(this, legacy[0])
+            ? calculateProductionSources(this, needs_list, legacy, null, {automaticOnly: true}) : legacy;
     }
 
-    /** Keep the original numerical path untouched for existing plans. */
+    /** Keep the original numerical path untouched for unrelated existing plans. */
     calculate(needs_list) {
-        if (!this.settings.production_sources?.length) return this.#calculateLegacy(needs_list);
+        if (!this.settings.production_sources?.length) {
+            const legacy = this.#calculateLegacy(needs_list);
+            return needsOrbitalCollectorCalculation(this, legacy[0])
+                ? calculateProductionSources(this, needs_list, legacy) : legacy;
+        }
         // This pass provides the old dependency order only. A manual source can
         // make an otherwise infeasible automatic-only chain feasible.
         let legacy;

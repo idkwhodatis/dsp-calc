@@ -30,6 +30,7 @@ export function buildLinkedByproducts(state, needs, calculation) {
                 item, parentItem, parentSourceId, parentKind, ordinal, output,
                 recipeId: line.recipe_id,
                 factoryName: line.factory_name,
+                ...(line.shared_collector_group ? {sharedCollector: details?.shared_collectors?.find(group => group.id === line.shared_collector_group)} : {}),
             });
             byItem.set(item, rows);
             add(incoming, item, output);

@@ -1,5 +1,6 @@
 import solver from 'javascript-lp-solver';
 import {ApplyBuildingMultiplier} from './building_multipliers.js';
+import {orbitalCollectorProfile, poolFixedOrbitalCollectors, finalizeOrbitalCollectors, needsOrbitalCollectorCalculation} from './orbital_collectors.js';
 
 const EPSILON = 1e-8;
 let nextSourceId = 0;
@@ -121,6 +122,13 @@ export function productionSourceNode(state, source, {mineralized = false} = {}) 
         is_raw: Object.keys(recipe.原料).length === 0 && Object.keys(recipe.产物).length === 1,
         mineralized: false,
     };
+    const collector = orbitalCollectorProfile(state, normalized, recipeId, factory);
+    if (collector) {
+        node.orbital_collector = collector;
+        for (const other of collector.items) {
+            if (other !== item) node.byproducts[other] = collector.capacities[other] / collector.capacities[item];
+        }
+    }
     node.energy_per_building = energyPerBuilding(state, node);
     return node;
 }
@@ -240,6 +248,8 @@ function sourceResult(state, source, node, output, error = null) {
         is_raw: node?.is_raw || false,
         mineralized: node?.mineralized || false,
         error,
+        ...(node?.orbital_collector ? {shared_collector_group: node.orbital_collector.id,
+            collector_capacities: node.orbital_collector.capacities} : {}),
     };
     if ([result.output, result.gross_output, result.buildings, result.energy_mw,
         ...Object.values(result.inputs), ...Object.values(result.byproducts)].some(value => !Number.isFinite(value))) {
@@ -268,7 +278,7 @@ function recipeCost(state, node) {
     return Number.isFinite(cost) ? cost : 0;
 }
 
-function solveBalances(state, needs, autoNodes, manualResults) {
+function solveBalances(state, needs, autoNodes, manualResults, collector = null, coupled = false) {
     const model = {optimize: 'cost', opType: 'min', constraints: {}, variables: {}};
     const balanceNeeds = {...needs};
     for (const source of manualResults) {
@@ -283,13 +293,25 @@ function solveBalances(state, needs, autoNodes, manualResults) {
         for (const [other, amount] of Object.entries(node.byproducts)) variable[`item:${other}`] = amount;
         model.variables[`auto:${item}`] = variable;
     }
+    if (coupled) {
+        for (const [item, node] of Object.entries(autoNodes)) {
+            if (node.orbital_collector || Object.keys(node.byproducts).length || (needs[item] || 0) < 0) continue;
+            const supplied = manualResults.some(line => (line.target_item === item && line.output > EPSILON)
+                || (line.byproducts[item] || 0) > EPSILON)
+                || Object.values(autoNodes).some(other => (other.byproducts[item] || 0) > EPSILON);
+            // A single-output route with no outside/coproduct supply has no
+            // forced-surplus reason. Do not invent extra H-consuming products
+            // merely to justify collectors and evade the selected D route.
+            if (!supplied) model.constraints[`item:${item}`] = {equal: balanceNeeds[item] || 0};
+        }
+    }
     const errors = [];
-    const finite = [...Object.values(model.constraints).map(constraint => constraint.min),
+    const finite = [...Object.values(model.constraints).map(constraint => constraint.min ?? constraint.equal),
         ...Object.values(model.variables).flatMap(variable => Object.values(variable))].every(Number.isFinite);
     if (!finite) return {result: {}, errors: ['产量或配方系数过大，无法可靠计算物料平衡']};
     let solved;
     try {
-        solved = solver.Solve(model, 1e-10);
+        solved = collector ? solveOrbitalBalanceVariants(model, collector) : solver.Solve(model, 1e-10);
     } catch {
         return {result: {}, errors: ['物料平衡求解失败，请检查产量、配方和成本设置']};
     }
@@ -303,6 +325,48 @@ function solveBalances(state, needs, autoNodes, manualResults) {
         }
     }
     return {result, errors};
+}
+
+/** Demand closure excludes unrelated automatic sinks from the coupled model. */
+function requiredAutomaticNodes(needs, nodes, fixed) {
+    const pending = Object.entries(needs).filter(([, amount]) => amount > EPSILON).map(([item]) => item);
+    for (const source of fixed) pending.push(...Object.keys(source.inputs));
+    const selected = {};
+    while (pending.length) {
+        const item = pending.pop();
+        if (selected[item] || !nodes[item]) continue;
+        selected[item] = nodes[item];
+        pending.push(...Object.keys(nodes[item].inputs));
+    }
+    return selected;
+}
+
+/**
+ * A new collector must meet a selected primary material's residual demand.
+ * One physical H/D variable has only three possible active sets: no growth,
+ * hydrogen exactly balanced, or deuterium exactly balanced. Fixed surplus is
+ * retained in the no-growth branch; coproduct value cannot create a free fleet.
+ */
+function solveOrbitalBalanceVariants(model, collector) {
+    const growth = `auto:${collector.owner}`;
+    const variants = [null, ...collector.primaries];
+    let best = null;
+    for (const primary of variants) {
+        const candidate = structuredClone(model);
+        if (primary) {
+            const key = `item:${primary}`;
+            candidate.constraints[key] = {equal: candidate.constraints[key].min};
+        } else {
+            candidate.constraints.collectorGrowth = {max: 0};
+            candidate.variables[growth].collectorGrowth = 1;
+        }
+        const solved = solver.Solve(candidate, 1e-10);
+        if (!solved.feasible) continue;
+        if (solved.bounded === false) return solved;
+        if (!best || solved.result < best.result - EPSILON
+            || (Math.abs(solved.result - best.result) < EPSILON && (solved[growth] || 0) < (best[growth] || 0))) best = solved;
+    }
+    return best || {feasible: false};
 }
 
 /**
@@ -385,8 +449,8 @@ function solveCompatibleBalances(needs, nodes, sources, fixed, solveCompatible) 
 }
 
 /** Independent fixed sources and the original automatically balanced sources. */
-export function calculateProductionSources(state, needs, legacy, solveCompatible) {
-    const sources = (Array.isArray(state.settings.production_sources) ? state.settings.production_sources : []).filter(Boolean);
+export function calculateProductionSources(state, needs, legacy, solveCompatible, {automaticOnly = false} = {}) {
+    const sources = (automaticOnly ? [] : Array.isArray(state.settings.production_sources) ? state.settings.production_sources : []).filter(Boolean);
     const errors = [];
     const savedSourceResults = sources.map((source, index) => {
         const safe = {...source, id: source.id || `source-${index}`, standalone: source.standalone === true};
@@ -434,19 +498,13 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
         for (const source of allFixed) Object.assign(source, sourceResult(state, source, null, 0, error));
     }
     const hasAllocation = sourceResults.some(source => source.output > EPSILON);
+    const fixedPool = poolFixedOrbitalCollectors(state, allFixed);
+    const hasOrbitalAllocation = (fixedPool?.fixed_buildings || 0) > EPSILON;
+    let orbitalActive = hasOrbitalAllocation || needsOrbitalCollectorCalculation(state, legacy[0]);
     const autoNodes = {};
     for (const item of Object.keys(state.item_data)) {
         try {
             const node = productionSourceNode(state, automaticSource(state, item), {mineralized: item in state.settings.mineralize_list});
-            if (!hasAllocation) {
-                // Preserve the legacy result/normalization exactly when adding a
-                // zero source, including historical mod recipe behavior.
-                const graph = state.item_graph[item];
-                node.inputs = graph.原料;
-                node.byproducts = graph.副产物;
-                node.output_per_second = graph.产出倍率 * node.factory.倍率;
-                node.gross_multiplier = 1 + (graph.自消耗 || 0);
-            }
             autoNodes[item] = node;
         } catch (error) {
             // An unused unusable recipe need not make an otherwise valid plan
@@ -454,18 +512,41 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
             if ((needs[item] || 0) > 0) errors.push(`${item}：${error.message}`);
         }
     }
+    if (!orbitalActive && allFixed.some(line => line.output > EPSILON)) {
+        // Standalone sources can introduce collector demand several inputs
+        // upstream, even when the original target list is empty.
+        orbitalActive = Object.values(requiredAutomaticNodes(needs, autoNodes, allFixed))
+            .some(node => node.orbital_collector);
+    }
+    if (!hasAllocation && !orbitalActive) {
+        // A zero or paused source preserves legacy normalization exactly.
+        for (const [item, node] of Object.entries(autoNodes)) {
+            const graph = state.item_graph[item];
+            node.inputs = graph.原料;
+            node.byproducts = graph.副产物;
+            node.output_per_second = graph.产出倍率 * node.factory.倍率;
+            node.gross_multiplier = 1 + (graph.自消耗 || 0);
+        }
+    }
     let result = legacy[0];
-    if (hasAllocation) {
+    if (hasAllocation || orbitalActive) {
         // Explicit disposal penalties need the full objective: the legacy
         // historical-cost reduction can bypass them by making surplus products.
         const hasDisposalPenalty = Object.values(state.scheme_data.cost_weight.物品额外成本)
             .some(cost => (Number(cost.溢出时处理成本) || 0) !== 0);
-        const compatible = hasDisposalPenalty ? null : solveCompatibleBalances(needs, autoNodes, sourceResults, allFixed, solveCompatible);
+        const compatible = hasDisposalPenalty || orbitalActive ? null : solveCompatibleBalances(needs, autoNodes, sourceResults, allFixed, solveCompatible);
         if (compatible) {
             result = compatible;
         } else {
-            const solved = solveBalances(state, needs, autoNodes, allFixed);
-            result = canonicalizeEquivalentRecipes(state, solved.result, autoNodes, legacy[0], needs);
+            const solveNodes = orbitalActive ? requiredAutomaticNodes(needs, autoNodes, allFixed) : autoNodes;
+            const collectorItems = orbitalActive ? Object.keys(solveNodes).filter(item => solveNodes[item].orbital_collector) : [];
+            // A single variable carries both outputs. Other selected collector
+            // rows are views of that process, never extra physical production.
+            const collectorOwner = ['氢', '重氢'].find(item => collectorItems.includes(item));
+            const collector = collectorOwner ? {owner: collectorOwner, primaries: collectorItems} : null;
+            if (collector) for (const item of collectorItems) if (item !== collectorOwner) delete solveNodes[item];
+            const solved = solveBalances(state, needs, solveNodes, allFixed, collector, orbitalActive);
+            result = orbitalActive ? solved.result : canonicalizeEquivalentRecipes(state, solved.result, autoNodes, legacy[0], needs);
             errors.push(...solved.errors);
         }
     }
@@ -489,6 +570,12 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
         const item = source.target_item;
         if (Object.hasOwn(autoNodes, item) && !Object.hasOwn(automatic, item)) automatic[item] = sourceResult(state, autoNodes[item].source, autoNodes[item], 0);
     }
+    if (orbitalActive) {
+        for (const [item, node] of Object.entries(autoNodes)) {
+            if (node.orbital_collector && !automatic[item]) automatic[item] = sourceResult(state, node.source, node, 0);
+        }
+    }
+    const sharedCollectors = finalizeOrbitalCollectors(state, automatic, allFixed, fixedPool);
     const required = {};
     for (const [item, amount] of Object.entries(needs)) required[item] = Math.max(0, Number(amount) || 0);
     const incoming = {};
@@ -500,11 +587,12 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
     const allocated = {};
     for (const line of allFixed) if (Object.hasOwn(state.item_data, line.target_item)) add(allocated, line.target_item, line.output);
     const groups = {};
-    const surplus = hasAllocation ? {} : {...legacy[1]};
+    const recomputed = hasAllocation || orbitalActive;
+    const surplus = recomputed ? {} : {...legacy[1]};
     for (const item of new Set([...Object.keys(result), ...Object.keys(required), ...Object.keys(incoming), ...Object.keys(allocated)])) {
         const produced = (result[item] || 0) + (allocated[item] || 0) + (incoming[item] || 0);
         const excess = Math.max(0, produced - (required[item] || 0));
-        if (hasAllocation && excess > EPSILON) surplus[item] = excess;
+        if (recomputed && excess > EPSILON) surplus[item] = excess;
         groups[item] = {
             required: required[item] || 0,
             allocated: allocated[item] || 0,
@@ -518,11 +606,16 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
     if (missingItems.length) errors.push(`当前来源未能满足物料需求：${missingItems.join('、')}`);
     const totals = {buildingCounts: {}, fractionalBuildingCounts: {}, rawMaterials: {}, energyCost: 0, totalEnergyCost: 0};
     for (const line of [...Object.values(automatic), ...allFixed]) {
-        if (line.building_count > 0 && !line.mineralized) {
-            add(totals.buildingCounts, line.factory_name, line.building_count);
-            add(totals.fractionalBuildingCounts, line.factory_name, line.buildings);
+        const count = line.physical_building_count ?? line.building_count;
+        const buildings = line.physical_buildings ?? line.buildings;
+        if (count > 0 && !line.mineralized) {
+            add(totals.buildingCounts, line.factory_name, count);
+            add(totals.fractionalBuildingCounts, line.factory_name, buildings);
         }
         if (line.is_raw && line.output > EPSILON) add(totals.rawMaterials, line.target_item, line.output);
+        if (line.shared_collector_group) {
+            for (const [item, amount] of Object.entries(line.byproducts)) add(totals.rawMaterials, item, amount);
+        }
         totals.totalEnergyCost += line.energy_mw;
         if (!isMiningBuilding(line.factory_name || '')) totals.energyCost += line.energy_mw;
     }
@@ -538,6 +631,6 @@ export function calculateProductionSources(state, needs, legacy, solveCompatible
     if (overflow) errors.push('产量合计超出可表示范围，统计结果无效；请减小产量');
     const order = [...new Set([...Object.keys(legacy[0]), ...Object.keys(result), ...sourceResults.map(source => source.target_item)])]
         .filter(item => Object.hasOwn(state.item_data, item));
-    const details = {sources: sourceResults, paused_sources: pausedSources, legacy_sources: legacyResults, automatic, groups, totals, order, item_order: order, errors, valid: errors.length === 0 && sourceResults.every(source => !source.error)};
+    const details = {shared_collectors: sharedCollectors, sources: sourceResults, paused_sources: pausedSources, legacy_sources: legacyResults, automatic, groups, totals, order, item_order: order, errors, valid: errors.length === 0 && sourceResults.every(source => !source.error)};
     return [result, surplus, details];
 }

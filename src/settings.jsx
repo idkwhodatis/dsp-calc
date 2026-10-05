@@ -109,6 +109,7 @@ export function Settings() {
 
     return <div className="grid gap-4 md:grid-cols-2">
         <SettingGroup title="资源面板" description="填写游戏中的资源采集面板数值" icon={Orbit}>
+            {global_state.game_data.mods?.every(mod => mod === 'DarkFogSynthesis') && <p className="text-xs text-muted-foreground">氢与重氢面板按同一气态巨星共享采集；可燃冰采集单独计算</p>}
             {resources.map(([name, label, unit]) => number(name, label, {min: 0.01, step: 0.1, unit: unit || '/s · 星球资源详情'}))}
             {global_state.game_data.GenesisBookEnable && genesisResources.map(([name, label]) =>
                 number(name, label, {min: 0.01, step: 0.1, unit: '/s · 星球资源详情'}))}

@@ -42,7 +42,7 @@ export function PausedProductionSources({sources, onEnable, onRemove}) {
 export function ProductionSourceCard({item, source, automatic, ordinal, output, buildings, factory_name,
     recipe_choice, recipe_id, building, proliferator_mode, proliferator_points,
     onOutputChange, onBuildingsChange, onRecipeChange, onRecipeFork, onFactoryChange, onModeChange, onPointsChange, onRemove,
-    is_mineralized = false}) {
+    is_mineralized = false, sharedGroup}) {
     const {settings, game_data, item_data} = useContext(GlobalStateContext);
     const knownItem = Object.hasOwn(item_data, item);
     const displayRecipeId = recipe_id ?? (knownItem ? item_data[item]?.[recipe_choice] ?? item_data[item]?.[1] : undefined);
@@ -71,7 +71,8 @@ export function ProductionSourceCard({item, source, automatic, ordinal, output, 
         <div data-source-field="identity" className="space-y-1.5 whitespace-nowrap">
             <h3 className="font-medium">{label}</h3>
             <div className="flex min-h-12 items-center">
-                <Badge variant={automatic ? 'secondary' : 'outline'} className="px-1.5 py-0.5 text-base font-normal">{automatic ? '补足剩余' : '独立分配'}</Badge>
+                <Badge variant={automatic ? 'secondary' : 'outline'} className="px-1.5 py-0.5 text-base font-normal">{sharedGroup ? '共享采集' : automatic ? '补足剩余' : '独立分配'}</Badge>
+                {sharedGroup && <span className="text-xs text-muted-foreground">同组共 {sharedGroup.building_count} 台</span>}
             </div>
         </div>
         <div data-source-field="output" className="space-y-1.5 whitespace-nowrap">
@@ -84,7 +85,7 @@ export function ProductionSourceCard({item, source, automatic, ordinal, output, 
             </div>
         </div>
         <div data-source-field="buildings" className="space-y-1.5 whitespace-nowrap">
-            <p className="text-base text-muted-foreground" title={automatic ? undefined : quantityHint}>工厂数量
+            <p className="text-base text-muted-foreground" title={automatic ? undefined : quantityHint}>{sharedGroup ? '采集需求折算' : '工厂数量'}
                 {!automatic && quantityMode === 'buildings' && <span className="text-xs"> · 固定</span>}</p>
             <div className="flex min-h-12 items-center gap-1.5 tabular-nums">
                 {automatic && is_mineralized ? <span className="text-muted-foreground" title={countUnavailable}>外部供给</span> : <>
@@ -92,7 +93,7 @@ export function ProductionSourceCard({item, source, automatic, ordinal, output, 
                     {automatic ? <output aria-label={`${name}工厂数量`} className="text-base">{(buildings || 0).toFixed(fixed)}</output>
                         : <AutoSizedInput delayed value={countUnavailable ? '—' : selectedCount.toFixed(fixed)} onChange={onBuildingsChange}
                             disabled={Boolean(countUnavailable)} aria-label={`${name}工厂数量`}
-                            aria-description={countUnavailable || quantityHint} title={countUnavailable || quantityHint}/>}
+                            aria-description={countUnavailable || (sharedGroup ? `${quantityHint}；氢与重氢共享同一组采集器，数量不相加` : quantityHint)} title={countUnavailable || (sharedGroup ? `${quantityHint}；氢与重氢共享同一组采集器，数量不相加` : quantityHint)}/>}
                 </>}
             </div>
         </div>
@@ -129,21 +130,21 @@ export function ByproductSourceCard({item, source, ordinal, onShowParent}) {
         className="dsp-byproduct-source flex w-max max-w-5xl flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-dashed bg-muted/20 px-3 py-3 text-base">
         <div className="space-y-1">
             <h3 className="flex items-center gap-2 font-medium"><ItemIcon item={source.parentItem} size={28} tooltip={false}/>
-                现有产线 · {source.parentItem}副产</h3>
-            <p className="text-sm text-muted-foreground">{parentLabel} · 已计入供给，随来源产线更新</p>
+                {source.sharedCollector ? '同组轨道采集' : <>现有产线 · {source.parentItem}副产</>}</h3>
+            <p className="text-sm text-muted-foreground">{source.sharedCollector ? '氢与重氢联合产出，已计入供给' : `${parentLabel} · 已计入供给，随来源产线更新`}</p>
         </div>
         <div className="flex items-center gap-1.5 tabular-nums"><ItemIcon item={item} size={24} tooltip={false}/>
             <output aria-label={`${item}副产来源 ${ordinal}产量`} className="font-semibold">{source.output.toFixed(settings.fixed_num)}</output>
             <span className="text-muted-foreground">/ {unit}</span>
         </div>
-        {recipe && <div className="max-w-96" aria-label={`${item}副产来源 ${ordinal}原配方`}><Recipe recipe={recipe} compact="full"/></div>}
+        {recipe && !source.sharedCollector && <div className="max-w-96" aria-label={`${item}副产来源 ${ordinal}原配方`}><Recipe recipe={recipe} compact="full"/></div>}
         <div className="space-y-1">
             {onShowParent ? <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 text-base"
                 aria-label={`查看${source.parentItem}${parentLabel}（${item}副产来源 ${ordinal}）`} onClick={onShowParent}>
                 {source.factoryName && <ItemIcon item={source.factoryName} size={24} tooltip={false}/>}
                 查看来源产线
             </Button> : <span className="text-sm text-muted-foreground">来源产线未显示</span>}
-            <p className="text-xs text-muted-foreground">工厂与耗电只在来源处计数</p>
+            <p className="text-xs text-muted-foreground">{source.sharedCollector ? '共享采集器在合计中只计一次' : '工厂与耗电只在来源处计数'}</p>
         </div>
     </article>;
 }
@@ -176,5 +177,20 @@ export function ProductionSourceGroup({item, group, totalControl, onAdd, mineral
             className="dsp-source-cards flex flex-col min-w-0 max-w-full items-start gap-3 overflow-x-auto overscroll-x-contain pb-2 focus-visible:outline-2 focus-visible:outline-ring">
             {children}
         </div>
+    </section>;
+}
+
+export function SharedCollectorsSummary({groups}) {
+    const {settings} = useContext(GlobalStateContext);
+    if (!groups?.some(group => group.buildings > 1e-8)) return null;
+    const unit = settings.is_time_unit_minute ? 'min' : 's';
+    return <section aria-label="共享轨道采集" className="space-y-2 rounded-lg border bg-muted/20 px-3 py-2 text-sm">
+        {groups.filter(group => group.buildings > 1e-8).map(group => <div key={group.id} data-shared-collector-id={group.id} className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="inline-flex items-center gap-1.5 font-medium"><ItemIcon item={group.factory_name} size={24} tooltip={false}/>气态巨星共享采集</span>
+            <span>合计配置 <output aria-label="共享轨道采集数量" className="font-semibold tabular-nums">{group.building_count}</output> 台（需求折算 {group.buildings.toFixed(settings.fixed_num)} 台）</span>
+            {group.items.map(item => <span key={item} className="inline-flex items-center gap-1.5"><ItemIcon item={item} size={20} tooltip={false}/>{item}
+                <output aria-label={`共享采集${item}产量`} className="tabular-nums">{(group.outputs[item] || 0).toFixed(settings.fixed_num)}</output> / {unit}</span>)}
+            <span className="text-muted-foreground">按同一气态巨星面板共同采集，氢与重氢数量不相加</span>
+        </div>)}
     </section>;
 }

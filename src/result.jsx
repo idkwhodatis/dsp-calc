@@ -1,7 +1,7 @@
 import {useContext, useMemo, useState, useEffect, useRef} from 'react';
 import {CompactModeContext, GlobalStateContext, SchemeDataSetterContext, SettingsSetterContext} from './contexts';
 import {ItemIcon} from './icon';
-import {ByproductSourceCard, PausedProductionSources, ProductionSourceCard, ProductionSourceGroup} from './natural_production_line';
+import {ByproductSourceCard, PausedProductionSources, ProductionSourceCard, ProductionSourceGroup, SharedCollectorsSummary} from './natural_production_line';
 import {createProductionSource, fromDisplayRate, getProductionEnergy, isItemRequired, isMiningBuilding} from './production_sources.js';
 import {describeRecipe, HorizontalMultiButtonSelect, Recipe} from './recipe';
 import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
@@ -432,6 +432,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         const item_sources = production_sources.filter(source => source.target_item === i);
         const byproduct_sources = linked_byproducts.byItem[i] || [];
         const automatic_amount = Math.max(0, result_dict[i] || 0);
+        const automatic_shared_group = source_details?.shared_collectors?.find(group => group.id === source_details?.automatic?.[i]?.shared_collector_group);
         let total = automatic_amount + Object.values(side_products[i]).reduce((a, b) => a + b, 0);
         if (total < 1e-6 && item_sources.length === 0 && byproduct_sources.length === 0) continue;
         let recipe_id = item_data[i][scheme_data.item_recipe_choices[i]];
@@ -495,12 +496,12 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                 <td colSpan={8} className="px-2 py-3">
                     <ProductionSourceGroup item={i} group={group} linkedByproductSupply={byproduct_sources.reduce((sum, source) => sum + source.output, 0)} onAdd={() => add_source(i)} mineralizeControl={mineralizeControl}
                         totalControl={<output aria-label={`${i}总需求`} className="text-base font-semibold tabular-nums">{group.required.toFixed(fixed_num)}</output>}>
-                        <ProductionSourceCard item={i} automatic output={group.automatic} buildings={factory_number} factory_name={factory_name}
+                        <ProductionSourceCard item={i} sharedGroup={automatic_shared_group} automatic output={group.automatic} buildings={factory_number} factory_name={factory_name}
                             recipe_id={recipe_id} recipe_choice={scheme_data.item_recipe_choices[i]} building={automatic_scheme['建筑']}
                             proliferator_mode={automatic_scheme['增产模式']} proliferator_points={automatic_scheme['增产点数']}
                             onRecipeChange={change_recipe} onRecipeFork={item_sources.length === 0 ? value => add_source(i, value, true) : undefined} onFactoryChange={change_factory} onModeChange={change_pro_mode} onPointsChange={change_pro_num}
                             is_mineralized={is_mineralized}/>
-                        {item_sources.map((source, index) => <ProductionSourceCard key={source.id} item={i} source={source} ordinal={index + 1}
+                        {item_sources.map((source, index) => <ProductionSourceCard key={source.id} item={i} sharedGroup={source_details?.shared_collectors?.find(group => group.id === source.shared_collector_group)} source={source} ordinal={index + 1}
                             output={source.output} buildings={source.buildings} factory_name={source.factory_name}
                             recipe_id={source.recipe_id} recipe_choice={source.recipe_choice} building={source.building}
                             proliferator_mode={source.proliferator_mode} proliferator_points={source.proliferator_points}
@@ -547,6 +548,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                     <ItemIcon item={factory_name} size={is_mobile ? 20 : 30}/>
                     <RatioAdjustInput value={factory_number} {...ratioProps} label={`${i}工厂数量，等比例调整需求`}/>
                 </div> : <span className="text-muted-foreground">—</span>}
+                {automatic_shared_group && <p className="mt-1 text-xs text-muted-foreground">共享采集 · 同组共 {automatic_shared_group.building_count} 台</p>}
             </td>
             <td className="px-2 py-3"><RecipeSelect item={i} onChange={change_recipe} onFork={value => add_source(i, value, true)} choice={scheme_data.item_recipe_choices[i]} compact={compact_mode}/></td>
             <td className="px-2 py-3"><ProModeSelect recipe_id={recipe_id} onChange={change_pro_mode} choice={scheme_data.scheme_for_recipe[recipe_id]["增产模式"]}/></td>
@@ -687,6 +689,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
                 <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-sm" onClick={() => set_show_building_popup(true)}>建筑与需求</Button>
             </div>
         </div>
+        <SharedCollectorsSummary groups={source_details?.shared_collectors}/>
         <PausedProductionSources sources={source_details?.paused_sources}
             onEnable={id => update_source(id, {standalone: true, scope: 'global'})} onRemove={remove_source}/>
         {(source_details?.errors?.length > 0 || production_sources.some(source => !has_item(source.target_item))) && <div role="alert" className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-base text-destructive">
