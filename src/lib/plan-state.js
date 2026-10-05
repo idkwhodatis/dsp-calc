@@ -1,3 +1,4 @@
+import {isPileSorterLevel, migratePileSorter} from './pile-sorter.js';
 import {isStorageRecord} from './storage.js';
 import {normalizeSourceIds} from './source-storage.js';
 import {migrateSchemeForGame} from './game-data-migrations.js';
@@ -62,6 +63,7 @@ function validateScheme(scheme, game_info) {
     const game = game_info.game_data;
     scheme = migrateSchemeForGame(scheme, game);
     if (!isStorageRecord(scheme) || !isStorageRecord(scheme.item_recipe_choices)
+        || (Object.hasOwn(scheme, 'pile_sorter_level') && !isPileSorterLevel(scheme.pile_sorter_level))
         || (Object.hasOwn(scheme, 'use_pile_sorter') && typeof scheme.use_pile_sorter !== 'boolean')
         || !Array.isArray(scheme.scheme_for_recipe)
         || scheme.scheme_for_recipe.length !== game.recipe_data.length
@@ -80,7 +82,7 @@ function validateScheme(scheme, game_info) {
             || !Number.isInteger(Number(config['增产点数'])) || !game.proliferator_effect[config['增产点数']])) {
         throw new Error('方案中的生产策略不匹配当前游戏版本，当前计算未被修改。');
     }
-    return scheme;
+    return migratePileSorter(scheme);
 }
 
 function validateSources(sources) {

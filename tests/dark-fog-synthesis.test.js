@@ -15,10 +15,11 @@ const mods = [DarkFogSynthesisGUID];
 const game = get_game_data(mods);
 // Independent transcription of the pinned FrozenContent.cs contract, not derived
 // from the dataset under test. Tick quantities are converted at 60 ticks/second.
+const sourceCommit = '8aeb354826c1996db230a011e9473cee329116d0';
 const contracts = [
     {id: 48101, item: '能量碎片', count: 2, seconds: 2, inputs: {燃烧单元: 1, 高能石墨: 1, 玻璃: 1}, factories: ['电弧熔炉', '位面熔炉', '负熵熔炉'], speeds: [1, 2, 3]},
     {id: 48102, item: '黑雾矩阵', count: 1, seconds: 4, inputs: {晶格硅: 2, 光子合并器: 1, 电浆激发器: 1, 钛化玻璃: 1}, factories: ['矩阵研究站', '自演化研究站'], speeds: [1, 3]},
-    {id: 48103, item: '硅基神经元', count: 1, seconds: 4, inputs: {微晶元件: 2, 粒子宽带: 1, 晶格硅: 2}},
+    {id: 48103, item: '硅基神经元', count: 1, seconds: 4, inputs: {微晶元件: 2, 钛合金: 2, 晶格硅: 2}},
     {id: 48104, item: '物质重组器', count: 1, seconds: 6, inputs: {位面过滤器: 1, 超级磁场环: 2, 氢: 2, 晶格硅: 2}},
     {id: 48105, item: '负熵奇点', count: 1, seconds: 8, inputs: {奇异物质: 1, 卡西米尔晶体: 2, 氘核燃料棒: 1, 晶格硅: 2}},
     {id: 48106, item: '核心素', count: 1, seconds: 10, inputs: {反物质: 2, 框架材料: 2, 超级磁场环: 2, 晶格硅: 4}},
@@ -33,7 +34,8 @@ describe('optional Dark Fog Synthesis profile', () => {
         const profile = get_game_data(mods);
         expect(profile.game_name).toBe('DarkFogSynthesis');
         expect(profile.mods).toEqual(['DarkFogSynthesis']);
-        expect(profile.data_revision).toContain(mod.sourceCommit);
+        expect(mod.sourceCommit).toBe(sourceCommit);
+        expect(profile.data_revision).toContain(sourceCommit);
         expect(profile.recipe_data).toHaveLength(247);
         expect(profile.recipe_data.slice(0, 241)).toEqual(original.recipe_data);
         expect(profile.recipe_ids.slice(0, 241)).toEqual(original.recipe_ids);
@@ -106,6 +108,27 @@ describe('Dark Fog Synthesis production engine', () => {
         expect(result.buildings['黑雾引力透镜']).toBeCloseTo(1, 10);
     });
 
+    it('synthesizes neurons with titanium alloy and no particle-broadband dependency', () => {
+        const recipe = mod.recipes.find(recipe => recipe.ID === 48103);
+        expect(recipe.Items).toEqual([1302, 1107, 1113]);
+        expect(recipe.ItemCounts).toEqual([2, 2, 2]);
+        expect(recipe.Items).not.toContain(1402);
+        const result = calculateScenario(api, {mods, needs: {硅基神经元: 15}, factories: {硅基神经元: '制造台 Mk.II'}});
+        expect(result.production['硅基神经元']).toBeCloseTo(15, 10);
+        expect(result.production['微晶元件']).toBeCloseTo(30, 10);
+        expect(result.production['钛合金']).toBeCloseTo(30, 10);
+        expect(result.production['晶格硅']).toBeCloseTo(30, 10);
+        expect(result.production).not.toHaveProperty('粒子宽带');
+        expect(result.buildings['硅基神经元']).toBeCloseTo(1, 10);
+        const {state} = createScenario(api, {mods});
+        const source = resolveProductionSource(state, {...createProductionSource(state, '硅基神经元'), output_per_minute: 15});
+        expect(source.inputs).toEqual({微晶元件: 2, 钛合金: 2, 晶格硅: 2});
+        const needs = {硅基神经元: 15};
+        const view = buildDependencyView(state, needs, state.calculate(needs));
+        expect(view.items).toHaveProperty('钛合金');
+        expect(view.items).not.toHaveProperty('粒子宽带');
+    });
+
     it('feeds core element from exactly two antimatter and retains the photon receiver chain', () => {
         const result = calculateScenario(api, {mods, needs: {核心素: 6}, factories: {核心素: '制造台 Mk.II'}, recipes: {临界光子: 3}});
         expect(result.production['反物质']).toBeCloseTo(12, 10);
@@ -117,7 +140,7 @@ describe('Dark Fog Synthesis production engine', () => {
 
     it('balances a fixed-building synthesis source with manual drops and preserves saved source identity', () => {
         const {state} = createScenario(api, {mods, settings: {mineralize_list: {}}});
-        state.scheme_data.use_pile_sorter = true;
+        state.scheme_data.pile_sorter_level = 6;
         state.settings.production_sources = [
             {...createProductionSource(state, '黑雾矩阵'), id: 'synthesis', quantity_mode: 'buildings', building_quantity: 2},
             {...createProductionSource(state, '黑雾矩阵'), id: 'drops', recipe_choice: 1, output_per_minute: 15},
@@ -133,7 +156,7 @@ describe('Dark Fog Synthesis production engine', () => {
         const encoded = JSON.stringify(createNeedsPlanSnapshot(needs, state.scheme_data, state.settings, game.game_name));
         const decoded = decodeSavedPlan(JSON.parse(encoded), 'needs', new GameInfo(game));
         expect(decoded.settings.production_sources).toEqual(state.settings.production_sources);
-        expect(decoded.scheme_data.use_pile_sorter).toBe(true);
+        expect(decoded.scheme_data.pile_sorter_level).toBe(6);
         const restored = new GlobalState(new GameInfo(game), decoded.scheme_data, decoded.settings);
         expect(restored.calculate(decoded.needs_list)).toEqual(calculation);
         expect(() => decodeSavedPlan(JSON.parse(encoded), 'needs', new GameInfo(default_game_data))).toThrow('不属于当前游戏版本');
@@ -148,7 +171,7 @@ describe('Dark Fog Synthesis production engine', () => {
         let result = estimateLogistics(state, '黑雾矩阵', {automaticOutput: 60});
         expect(result.belt.status).toBe('ready');
         expect(result.belt.alternatives.map(option => option.capacityPerSecond)).toEqual([6, 12, 30]);
-        state.scheme_data.use_pile_sorter = true;
+        state.scheme_data.pile_sorter_level = 6;
         result = estimateLogistics(state, '黑雾矩阵', {automaticOutput: 60});
         expect(result.belt.status).toBe('ready');
         expect(result.belt.alternatives.map(option => option.capacityPerSecond)).toEqual([24, 48, 120]);

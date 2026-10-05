@@ -4,7 +4,7 @@ import {SavedPresets} from './components/saved-presets.jsx';
 import {createStrategySnapshot} from './lib/plan-state.js';
 
 const DEFAULT_SCHEME_DATA = {
-    "use_pile_sorter": false,
+    "pile_sorter_level": -1,
     "item_recipe_choices": {"氢": 1},
     "scheme_for_recipe": [{"建筑": 0, "增产点数": 0, "增产模式": 0}],
     // 这是示例,实际上cost_weight之后会在init_scheme_data中重置

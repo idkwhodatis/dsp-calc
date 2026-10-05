@@ -2,7 +2,7 @@ import {useContext, useId} from 'react';
 import {GlobalStateContext, SchemeDataSetterContext} from './contexts.jsx';
 import {ItemIcon} from './icon.jsx';
 import {Button} from './components/ui/button';
-import {Checkbox} from './components/ui/checkbox';
+import {PILE_SORTER_LEVELS, pileSorterLabel, pileSorterLevel} from './lib/pile-sorter.js';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from './components/ui/select';
 
 function FactorySelect({factory, list}) {
@@ -97,15 +97,23 @@ export function BatchSetting() {
                 </div>
             </div>
             {factories.map(([factory, list]) => <FactorySelect key={factory} factory={factory} list={list}/>)}
-        </div>
-        <div className="mt-4 space-y-1.5 border-t pt-3">
-            <label className="inline-flex cursor-pointer items-center gap-2 text-sm" htmlFor={pileSorterId}>
-                <Checkbox id={pileSorterId} checked={scheme_data.use_pile_sorter === true}
-                    aria-describedby={`${pileSorterId}-description`}
-                    onCheckedChange={checked => set_scheme_data(previous => ({...previous, use_pile_sorter: checked === true}))}/>
-                使用集装分拣器（满级科技）
-            </label>
-            <p id={`${pileSorterId}-description`} className="text-xs text-muted-foreground">按集装分拣器改良 6、理想 4 层出料估算；仅影响物流参考，不改变产量或建筑数量</p>
+            <div className="min-w-0 space-y-1.5">
+                <p className="text-[11px] text-muted-foreground">分拣器</p>
+                <Select value={String(pileSorterLevel(scheme_data))} onValueChange={value => set_scheme_data(previous => {
+                    const next = {...previous};
+                    delete next.use_pile_sorter;
+                    return {...next, pile_sorter_level: Number(value)};
+                })}>
+                    <SelectTrigger className="h-9 min-w-36 gap-2 bg-background text-xs" aria-label="批量设置分拣器"
+                        aria-describedby={`${pileSorterId}-description`}>
+                        <SelectValue/>
+                    </SelectTrigger>
+                    <SelectContent>
+                        {PILE_SORTER_LEVELS.map(level => <SelectItem key={level} value={String(level)}>{pileSorterLabel(level)}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+                <span id={`${pileSorterId}-description`} className="sr-only">选择集装分拣器改良等级；仅影响理想物流参考，不改变产量或建筑数量</span>
+            </div>
         </div>
     </section>;
 }

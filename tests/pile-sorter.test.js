@@ -3,13 +3,14 @@ import {GameInfo, GlobalState} from '../src/global_state.jsx';
 import {get_game_data} from '../src/GameData.jsx';
 import {init_scheme_data} from '../src/scheme_data.jsx';
 import {createProductionSource, productionSourceNode} from '../src/production_sources.js';
-import {PILE_SORTER_TIERS, estimateLogistics, estimateThroughput} from '../src/logistics.js';
+import {PILE_SORTER_TIERS, pileSorterConfig, estimateLogistics, estimateThroughput} from '../src/logistics.js';
 import {createNeedsPlanSnapshot, createStrategySnapshot, decodeSavedPlan} from '../src/lib/plan-state.js';
 import {createScenario} from './helpers/solver-cases.js';
 
 const api = {GameInfo, GlobalState, get_game_data, init_scheme_data};
 function make(scenario = {}, enabled = true) {
-    const {state} = createScenario(api, {...scenario, settings: {mineralize_list: {}, ...scenario.settings}});
+    const {state} = createScenario(api, {...scenario, settings: {mineralize_list: {}, production_sources: [], ...scenario.settings}});
+    delete state.scheme_data.pile_sorter_level;
     state.scheme_data.use_pile_sorter = enabled;
     return state;
 }
@@ -156,7 +157,7 @@ describe('explicit full-research pile-sorter logistics', () => {
 describe('pile-sorter strategy and whole-plan persistence', () => {
     it('defaults off and treats a legacy missing flag exactly like false', () => {
         const state = make({}, false);
-        expect(init_scheme_data(state.game_data).use_pile_sorter).toBe(false);
+        expect(init_scheme_data(state.game_data).pile_sorter_level).toBe(-1);
         const options = {automaticOutput: 3600};
         const explicit = estimateLogistics(state, '铁块', options);
         delete state.scheme_data.use_pile_sorter;
@@ -194,6 +195,45 @@ describe('pile-sorter strategy and whole-plan persistence', () => {
         for (const value of ['false', 1, null]) {
             expect(() => decodeSavedPlan({...strategy, use_pile_sorter: value}, 'strategy', info)).toThrow('不匹配');
             expect(() => decodeSavedPlan({...plan, scheme_data: {...plan.scheme_data, use_pile_sorter: value}}, 'needs', info)).toThrow('不匹配');
+        }
+    });
+});
+
+
+describe('pile sorter research dropdown levels', () => {
+    const levels = [
+        [0, 2, 1, 13.3], [1, 2, 2, 17.1], [2, 3, 2, 18], [3, 3, 3, 22.5],
+        [4, 4, 3, 21.8], [5, 4, 4, 26.7], [6, 4, 4, 120],
+    ];
+    it.each(levels)('uses level %s carrying, stacking and disclosed interface reference', (level, carrying, stack, capacity) => {
+        const state = make({settings: {is_time_unit_minute: false}});
+        state.scheme_data.pile_sorter_level = level;
+        const result = estimateLogistics(state, '铁块', {automaticOutput: 120});
+        expect(pileSorterConfig(level)).toMatchObject({carryingCapacity: carrying, stackHeight: stack});
+        expect(result.sources[0].belt.stackHeight).toBe(stack);
+        expect(result.belt.cargoPerSecond).toBe(120 / stack);
+        expect(result.sorter.recommended.capacityPerSecond).toBe(capacity);
+        if (level < 6) expect(result.assumptions.join('')).toContain('并非官方精确公式');
+        const info = new GameInfo(state.game_data);
+        const strategy = createStrategySnapshot(state.scheme_data, state.settings);
+        const plan = createNeedsPlanSnapshot({'铁块': 120}, state.scheme_data, state.settings, state.game_data.game_name);
+        expect(decodeSavedPlan(strategy, 'strategy', info).scheme_data.pile_sorter_level).toBe(level);
+        expect(decodeSavedPlan(plan, 'needs', info).scheme_data.pile_sorter_level).toBe(level);
+        expect(estimateLogistics(state, '铁矿', {automaticOutput: 120}).sources[0].belt.stackHeight).toBe(1);
+    });
+    it.each([true, false])('migrates legacy %s to an explicit level', enabled => {
+        const state = make({}, enabled);
+        const saved = createStrategySnapshot(state.scheme_data, state.settings);
+        expect(decodeSavedPlan(saved, 'strategy', new GameInfo(state.game_data)).scheme_data.pile_sorter_level).toBe(enabled ? 6 : -1);
+    });
+    it('rejects malformed levels and makes explicit no-pile override a legacy true flag', () => {
+        const state = make();
+        state.scheme_data.pile_sorter_level = -1;
+        expect(estimateLogistics(state, '铁块', {automaticOutput: 6000}).usePileSorter).toBeUndefined();
+        const info = new GameInfo(state.game_data);
+        const saved = createStrategySnapshot(state.scheme_data, state.settings);
+        for (const value of [null, '2', -2, 7, 2.5, true]) {
+            expect(() => decodeSavedPlan({...saved, pile_sorter_level: value}, 'strategy', info)).toThrow('不匹配');
         }
     });
 });

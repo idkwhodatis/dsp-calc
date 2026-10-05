@@ -1,3 +1,4 @@
+import {migratePileSorter} from './lib/pile-sorter.js';
 import {createContext, useEffect, useState, useMemo} from 'react';
 import {GameInfo, GlobalState} from './global_state';
 import {init_scheme_data} from './scheme_data';
@@ -80,7 +81,7 @@ function restore_scheme(game_data) {
     try { all = readStorageObject("auto_scheme"); } catch { all = {}; }
     const saved = migrateSchemeForGame(all[game_data.game_name], game_data);
     return saved?.scheme_for_recipe?.length === game_data.recipe_data.length
-        ? saved : init_scheme_data(game_data);
+        ? migratePileSorter(saved) : init_scheme_data(game_data);
 }
 
 function synchronizeSourceSettings(game_info, scheme_data, settings) {

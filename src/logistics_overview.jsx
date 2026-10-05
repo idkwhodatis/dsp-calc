@@ -91,7 +91,7 @@ export function LogisticsOverview({item, estimate}) {
         setOpen(next);
     }
 
-    const label = `${item}物流估算：${estimate.usePileSorter ? '满级集装分拣器，按来源叠堆；' : ''}${recommendationLabel(estimate.belt, '传送带')}；${recommendationLabel(estimate.sorter, '分拣器')}；查看各档并行数量`;
+    const label = `${item}物流估算：${estimate.usePileSorter ? `${estimate.pileSorterLabel}，按来源叠堆；` : ''}${recommendationLabel(estimate.belt, '传送带')}；${recommendationLabel(estimate.sorter, '分拣器')}；查看各档并行数量`;
     let manualOrdinal = 0;
     return <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
