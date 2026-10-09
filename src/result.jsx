@@ -270,6 +270,8 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
             || Array.from(result_ref.current?.querySelectorAll('[data-source-id]') || []).find(element => element.dataset.sourceId === id);
         const allocation = source?.querySelector('input');
         if (allocation) {
+            const details = allocation.closest('.dsp-branch-global-settings');
+            if (details) details.open = true;
             allocation.focus({preventScroll: true});
             allocation.scrollIntoView?.({block: 'nearest', inline: 'nearest'});
         }

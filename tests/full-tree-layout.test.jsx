@@ -16,7 +16,9 @@ function Provider({children}) {
     </GlobalStateContext.Provider>;
 }
 function node(item, id, overrides = {}) {
-    return {item, id, depth: 0, kind: 'demand', scope: 'branch', branchRate: 60,
+    const branchRate = overrides.branchRate ?? 60;
+    const production = {capacity: branchRate, buildings: branchRate / 60, displayOffset: 0, status: 'recipe'};
+    return {item, id, depth: 0, kind: 'demand', scope: 'branch', branchRate, production,
         children: [], boundaryReasons: [], omittedInputs: [], ...overrides};
 }
 function model(roots, supplyRoots = [], overrides = {}) {
@@ -50,8 +52,8 @@ function show(viewModel, canonicalRows, extra = {}) {
 const treeRow = name => screen.getByRole('row', {name});
 
 describe('complete inline production rows in the dependency tree', () => {
-    it('reuses every canonical production column and cell beside a narrow read-only branch cell', () => {
-        const headerView = render(<table><thead><tr><ProductionColumns unit="min" global/></tr></thead></table>);
+    it('keeps canonical settings while replacing global quantities with read-only branch values', () => {
+        const headerView = render(<table><thead><tr><ProductionColumns unit="min" branch/></tr></thead></table>);
         const expectedHeaders = screen.getAllByRole('columnheader').map(header => header.textContent);
         expect(expectedHeaders).toHaveLength(9);
         headerView.unmount();
@@ -59,23 +61,24 @@ describe('complete inline production rows in the dependency tree', () => {
         const {container} = show(view, new Map([['铁块', canonical('铁块')]]));
         expect(screen.getByRole('region', {name: '依赖树生产视图'})).toBeInTheDocument();
         expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual(['依赖 / 本支需求', ...expectedHeaders]);
-        expect(screen.getByRole('columnheader', {name: /全局产能/})).toBeInTheDocument();
-        expect(screen.getByRole('columnheader', {name: /全局工厂数量/})).toBeInTheDocument();
+        expect(screen.getByRole('columnheader', {name: /本支产能/})).toBeInTheDocument();
+        expect(screen.getByRole('columnheader', {name: /本支工厂数量/})).toBeInTheDocument();
         const row = treeRow('铁块依赖第1层');
         expect(row.querySelectorAll(':scope > td')).toHaveLength(10);
         const branch = row.firstElementChild;
         expect(branch).toHaveClass('w-px');
         expect(within(branch).getByLabelText('铁块本支需求')).toHaveTextContent('12.00');
         expect(branch.querySelector('input,select')).toBeNull();
-        expect(within(row).getByRole('textbox', {name: '铁块产能，等比例调整需求'})).toHaveValue('777.00');
-        expect(within(row).getByLabelText('铁块工厂数量')).toHaveTextContent('42.50');
+        expect(within(row).getByLabelText('铁块本支产能')).toHaveTextContent('12.00');
+        expect(within(row).queryByRole('textbox')).not.toBeInTheDocument();
+        expect(within(row).getByLabelText('铁块本支工厂数量')).toHaveTextContent('0.20');
         expect(within(row).getByRole('combobox', {name: '铁块配方'})).toHaveValue('a');
         expect(within(row).getByText('物流：传送带 3 / 集装分拣器 2')).toBeVisible();
         expect(container.querySelector('details')).not.toHaveAttribute('open');
-        expect(screen.getByText(/任一处编辑都会同步全局计划/)).toBeVisible();
+        expect(screen.getByText(/配方、增产与工厂类型修改会同步全局计划/)).toBeVisible();
     });
 
-    it('keeps repeated canonical global values and all original action callbacks instead of deriving branch factories', async () => {
+    it('shows distinct branch quantities and preserves shared settings callbacks without exposing global quantity edits', async () => {
         const user = userEvent.setup();
         const action = vi.fn();
         const view = model([node('铁块', 'first', {branchRate: 10, shared: true}), node('铁块', 'second', {branchRate: 20, shared: true})]);
@@ -83,9 +86,10 @@ describe('complete inline production rows in the dependency tree', () => {
         const {rerender, container} = show(view, new Map([['铁块', canonical('铁块', action)]]));
         const rows = screen.getAllByRole('row', {name: '铁块依赖第1层'});
         expect(rows.map(row => within(row).getByLabelText('铁块本支需求').textContent)).toEqual(['10.00', '20.00']);
+        expect(rows.map(row => within(row).getByLabelText('铁块本支产能').textContent)).toEqual(['10.00', '20.00']);
+        expect(rows.map(row => within(row).getByLabelText('铁块本支工厂数量').textContent)).toEqual(['0.17', '0.33']);
         for (const row of rows) {
-            expect(within(row).getByRole('textbox')).toHaveValue('777.00');
-            expect(within(row).getByLabelText('铁块工厂数量')).toHaveTextContent('42.50');
+            expect(within(row).queryByRole('textbox')).not.toBeInTheDocument();
             expect(row.querySelector('summary')).toHaveTextContent('共享');
         }
         await user.click(within(rows[1]).getByRole('button', {name: '添加铁块产线'}));
@@ -95,28 +99,34 @@ describe('complete inline production rows in the dependency tree', () => {
         await user.selectOptions(within(rows[1]).getByRole('combobox', {name: '铁块增产模式'}), 'b');
         await user.selectOptions(within(rows[1]).getByRole('combobox', {name: '铁块增产剂'}), 'b');
         await user.selectOptions(within(rows[1]).getByRole('combobox', {name: '铁块工厂类型'}), 'b');
-        await user.clear(within(rows[1]).getByRole('textbox'));
-        expect(action.mock.calls).toEqual([['add'], ['raw'], ['fork'], ['recipe', 'b'], ['mode', 'b'], ['proliferator', 'b'], ['factory', 'b'], ['capacity', '']]);
+        expect(action.mock.calls).toEqual([['add'], ['raw'], ['fork'], ['recipe', 'b'], ['mode', 'b'], ['proliferator', 'b'], ['factory', 'b']]);
         const ids = Array.from(container.querySelectorAll('[data-node-id]'), row => row.id);
         expect(new Set(ids).size).toBe(2);
         rerender(<Provider><DependencyOverview viewModel={view} canonicalRows={new Map([['铁块', canonical('铁块', action, '999.00')]])} settings={settings}/></Provider>);
-        expect(screen.getAllByRole('textbox').map(input => input.value)).toEqual(['999.00', '999.00']);
+        expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+        expect(screen.getAllByLabelText('铁块本支产能').map(output => output.textContent)).toEqual(['10.00', '20.00']);
         expect(Array.from(container.querySelectorAll('[data-node-id]'), row => row.id)).toEqual(ids);
         expect(JSON.stringify(view)).toBe(original);
     });
 
-    it('retains grouped source columns, source edits and logistics unchanged', async () => {
+    it('separates unallocated branch quantities from expandable global source edits and logistics', async () => {
         const user = userEvent.setup();
         const remove = vi.fn();
         const rows = new Map([['铁块', <tr key="iron" data-item="铁块">
             <td colSpan={8}><section aria-label="铁块生产来源"><output aria-label="铁块全局总需求">500</output><button onClick={remove}>删除铁块现有产线 1</button><input aria-label="铁块现有产线 1分配产量" defaultValue="350"/><span>完整来源配方、增产剂和工厂</span></section></td>
             <td>全局物流估算</td>
         </tr>]]);
-        show(model([node('铁块', 'iron', {branchRate: 20})]), rows);
+        show(model([node('铁块', 'iron', {branchRate: 20, production: {capacity: null, buildings: null, status: 'unallocated'}})]), rows);
         const row = treeRow('铁块依赖第1层');
         const cells = Array.from(row.children);
-        expect(cells.map(cell => cell.colSpan)).toEqual([1, 8, 1]);
+        expect(cells.map(cell => cell.colSpan)).toEqual([1, 1, 1, 1, 1, 5]);
         expect(cells.reduce((total, cell) => total + cell.colSpan, 0)).toBe(10);
+        expect(within(row).getByLabelText('铁块本支产能')).toHaveTextContent('—');
+        expect(within(row).getByLabelText('铁块本支工厂数量')).toHaveTextContent('—');
+        expect(within(row).getByRole('textbox')).not.toBeVisible();
+        const toggle = within(row).getByLabelText('铁块全局来源设置');
+        expect(toggle.closest('details')).not.toHaveAttribute('open');
+        await user.click(toggle);
         expect(within(row).getByLabelText('铁块全局总需求')).toHaveTextContent('500');
         expect(within(row).getByRole('textbox')).toHaveValue('350');
         expect(within(row).getByText('全局物流估算')).toBeVisible();
@@ -124,7 +134,8 @@ describe('complete inline production rows in the dependency tree', () => {
         expect(remove).toHaveBeenCalledOnce();
     });
 
-    it('gives repeated source groups independent DOM IDs while preserving shared source identity', () => {
+    it('gives repeated source groups independent DOM IDs while preserving shared source identity', async () => {
+        const user = userEvent.setup();
         const grouped = <tr id="global-iron" data-item="铁块"><td colSpan={8}><ScopedSourceEditor/></td><td>物流</td></tr>;
         const view = model([node('铁块', 'first', {shared: true}), node('铁块', 'second', {shared: true})]);
         const {container, rerender} = show(view, new Map([['铁块', grouped]]));
@@ -135,6 +146,7 @@ describe('complete inline production rows in the dependency tree', () => {
         const instances = rows.map(row => row.dataset.rowInstance);
         expect(new Set(instances).size).toBe(2);
         for (const row of rows) {
+            await user.click(within(row).getByLabelText('铁块全局来源设置'));
             const editor = within(row).getByRole('textbox', {name: '来源产量'});
             expect(editor.id).toContain(row.dataset.rowInstance);
             expect(editor.parentElement).toHaveAttribute('data-source-id', 'iron-a');
@@ -146,7 +158,8 @@ describe('complete inline production rows in the dependency tree', () => {
     it('keeps cycle-boundary controls accessible and caps 4px indentation at 24px', () => {
         const {container} = show(model([
             node('铁块', 'first', {depth: 1}),
-            node('铁块', 'cycle', {depth: 80, reason: 'cycle', shared: true, branchRate: 1.25}),
+            node('铁块', 'cycle', {depth: 80, reason: 'cycle', shared: true, branchRate: 1.25,
+                production: {capacity: null, buildings: null, status: 'unallocated'}}),
         ]), new Map([['铁块', canonical('铁块')]]));
         const rows = container.querySelectorAll('[data-node-id]');
         expect(rows[0].querySelector('.dsp-dependency-item-content')).toHaveStyle({paddingInlineStart: '4px'});
@@ -155,7 +168,9 @@ describe('complete inline production rows in the dependency tree', () => {
         expect(rows[1]).toHaveAccessibleName('铁块依赖第81层');
         expect(rows[1]).toHaveAttribute('data-depth', '80');
         expect(within(rows[1]).getByLabelText('铁块本支需求')).toHaveTextContent('1.25');
-        expect(within(rows[1]).getByRole('textbox')).toHaveValue('777.00');
+        expect(within(rows[1]).getByLabelText('铁块本支产能')).toHaveTextContent('—');
+        expect(within(rows[1]).getByLabelText('铁块本支工厂数量')).toHaveTextContent('—');
+        expect(within(rows[1]).getByRole('button', {name: '添加铁块产线'})).toBeVisible();
         expect(within(rows[1]).queryByRole('button', {name: /上游原料/})).not.toBeInTheDocument();
         expect(rows[1].querySelector('details')).toHaveTextContent('循环引用，查看全局供给');
     });
@@ -165,7 +180,8 @@ describe('complete inline production rows in the dependency tree', () => {
         const roots = Array.from({length: 51}, (_, index) => node('铁块', `root-${index}`, {branchRate: index + 1}));
         const {container} = show(model(roots), new Map([['铁块', canonical('铁块')]]));
         expect(container.querySelectorAll('tbody > tr')).toHaveLength(50);
-        expect(screen.getAllByRole('textbox')).toHaveLength(50);
+        expect(screen.getAllByLabelText('铁块本支产能')).toHaveLength(50);
+        expect(screen.queryAllByRole('textbox')).toHaveLength(0);
         const firstId = container.querySelector('tbody > tr').id;
         expect(new Set(Array.from(container.querySelectorAll('[id]'), element => element.id)).size).toBe(container.querySelectorAll('[id]').length);
         const next = screen.getByRole('button', {name: '下一页'});
@@ -173,11 +189,13 @@ describe('complete inline production rows in the dependency tree', () => {
         await user.keyboard('{Enter}');
         expect(container.querySelectorAll('tbody > tr')).toHaveLength(1);
         expect(screen.getByLabelText('铁块本支需求')).toHaveTextContent('51.00');
-        expect(screen.getByRole('textbox')).toHaveValue('777.00');
+        expect(screen.getByLabelText('铁块本支产能')).toHaveTextContent('51.00');
+        expect(screen.getByLabelText('铁块本支工厂数量')).toHaveTextContent('0.85');
         expect(next).toBeDisabled();
         await user.click(screen.getByRole('button', {name: '上一页'}));
         expect(container.querySelector('tbody > tr').id).toBe(firstId);
-        expect(screen.getAllByRole('textbox')).toHaveLength(50);
+        expect(screen.getAllByLabelText('铁块本支产能')).toHaveLength(50);
+        expect(screen.queryAllByRole('textbox')).toHaveLength(0);
     });
 
     it('preserves missing-canonical references without inventing global values or misaligning columns', () => {
@@ -207,9 +225,9 @@ describe('complete inline production rows in the dependency tree', () => {
         expect(within(remaining).getByRole('textbox', {name: '铜块产能，等比例调整需求'})).toHaveValue('777.00');
         expect(within(remaining).queryByLabelText('铜块本支需求')).not.toBeInTheDocument();
         expect(within(remaining).queryByLabelText('铜块全局投入')).not.toBeInTheDocument();
-        expect(screen.queryByRole('textbox', {name: '铁矿产能，等比例调整需求'})).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('铁矿本支产能')).not.toBeInTheDocument();
         await user.click(screen.getByRole('button', {name: '展开铁块的上游原料'}));
-        expect(screen.getByRole('textbox', {name: '铁矿产能，等比例调整需求'})).toBeInTheDocument();
+        expect(screen.getByLabelText('铁矿本支产能')).toHaveTextContent('60.00');
         await user.click(within(remaining).getByRole('button', {name: '添加铜块产线'}));
         expect(action).toHaveBeenCalledExactlyOnceWith('add');
         expect(JSON.stringify(view)).toBe(before);

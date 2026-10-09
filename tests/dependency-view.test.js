@@ -274,3 +274,90 @@ describe('cycle safety and bounded unfolding', () => {
         expect(view.supplyRoots.find(row => row.item === 'A').reason).toBe('invalid-source');
     });
 });
+
+describe('branch capacity and factory projection', () => {
+    it('splits repeated copper and keeps unequal target/intermediate branches distinct', () => {
+        const state = make();
+        const needs = {'电磁矩阵': 60, '电路板': 120};
+        const calculation = state.calculate(needs);
+        const snapshot = structuredClone(calculation);
+        const view = buildDependencyView(state, needs, calculation);
+        const matrixCopper = branch(view, '电磁矩阵', '电路板', '铜块');
+        const coilCopper = branch(view, '电磁矩阵', '磁线圈', '铜块');
+        const targetCopper = branch(view, '电路板', '铜块');
+        expect(matrixCopper.production).toMatchObject({capacity: 30, buildings: 0.5, status: 'recipe'});
+        expect(coilCopper.production).toMatchObject({capacity: 30, buildings: 0.5});
+        expect(targetCopper.production).toMatchObject({capacity: 60, buildings: 1});
+        expect(branch(view, '电磁矩阵', '电路板').production.capacity).toBe(60);
+        expect(branch(view, '电路板').production.capacity).toBe(120);
+        expect(view.items.铜块.automaticRate).toBe(120);
+        expect(calculation).toEqual(snapshot);
+    });
+
+    it('uses actual faster/proliferated recipe output and identical factories in seconds', () => {
+        const scenario = {factories: {'电路板': '制造台 Mk.III'}, proliferation: {'电路板': {增产点数: 4, 增产模式: 2}}};
+        const minute = project(make(scenario), {'电路板': 120});
+        const second = project(make({...scenario, settings: {is_time_unit_minute: false}}), {'电路板': 2});
+        expect(minute.roots[0].production.buildings).toBeCloseTo(120 / (60 * 2 * 1.5 * 1.25), 12);
+        for (const node of minute.rows.filter(row => row.production?.status === 'recipe')) {
+            const other = second.rows.find(row => row.id === node.id);
+            expect(other.production.capacity).toBeCloseTo(node.production.capacity / 60, 12);
+            expect(other.production.buildings).toBeCloseTo(node.production.buildings, 12);
+        }
+    });
+
+    it('keeps exact fractions and applies the legacy display offset only after scaling', () => {
+        const state = make();
+        const view = project(state, {'电磁矩阵': 1});
+        const copper = branch(view, '电磁矩阵', '电路板', '铜块');
+        expect(copper.production.buildings).toBeCloseTo(1 / 120, 14);
+        expect(copper.production.displayOffset).toBeCloseTo(0.0049994, 14);
+        expect((copper.production.buildings + copper.production.displayOffset).toFixed(2)).toBe('0.01');
+    });
+
+    it('uses gross recirculation for capacity without charging its factories twice', () => {
+        const state = {settings: {is_time_unit_minute: true, fixed_num: 2}, item_data: {A: [0, 1]},
+            scheme_data: {item_recipe_choices: {A: 1}, scheme_for_recipe: {1: {建筑: 0}}},
+            game_data: {recipe_data: {1: {设施: 'factory'}}, factory_data: {factory: [{倍率: 2}]}},
+            item_graph: {A: {原料: {}, 副产物: {}, 自消耗: 2, 产出倍率: 1}}};
+        const legacy = buildDependencyView(state, {A: 60}, [{A: 60}, {}]);
+        expect(legacy.roots[0].production).toMatchObject({capacity: 180, buildings: 0.5});
+        const detailed = buildDependencyView(state, {A: 60}, [{A: 60}, {}, {automatic: {
+            A: {output: 60, gross_output: 180, buildings: 0.5, inputs: {}, byproducts: {}},
+        }}]);
+        expect(detailed.roots[0].production).toMatchObject({capacity: 180, buildings: 0.5, displayOffset: 0});
+    });
+
+    it('still calculates a branch with a zero manual source but never allocates a positive pool', () => {
+        const state = make();
+        state.settings.production_sources = [sourceFor(state, '铜块', 0)];
+        let view = project(state, {'电磁矩阵': 60});
+        expect(view.items.铜块.hasCanonicalGroup).toBe(true);
+        expect(branch(view, '电磁矩阵', '电路板', '铜块').production).toMatchObject({capacity: 30, buildings: 0.5});
+        state.settings.production_sources[0].output_per_minute = 20;
+        view = project(state, {'电磁矩阵': 60});
+        expect(branch(view, '电磁矩阵', '电路板', '铜块').production).toEqual({capacity: null, buildings: null, displayOffset: 0, status: 'unallocated'});
+    });
+
+    it('does not label mineralized branches as zero factories when physical sources also supply them', () => {
+        const state = make({settings: {mineralize_list: {'铁块': true}}});
+        state.settings.production_sources = [sourceFor(state, '铁块', 30)];
+        const view = project(state, {'电路板': 120});
+        expect(branch(view, '电路板', '铁块')).toMatchObject({reason: 'global-supply',
+            production: {capacity: null, buildings: null, status: 'unallocated'}});
+        expect(view.items.铁块.manualRate).toBe(30);
+        expect(view.supplyRoots.some(root => root.item === '铁块')).toBe(true);
+    });
+
+    it('does not invent factories for coproducts, external supply or cycle references', () => {
+        const coproduct = project(make({recipes: {'石墨烯': 2}}), {'石墨烯': 120, '氢': 30});
+        expect(branch(coproduct, '氢').production).toMatchObject({capacity: null, buildings: null, status: 'unallocated'});
+        const external = project(make(), {'电路板': 120, '铁块': -60});
+        expect(branch(external, '电路板', '铁块').production.status).toBe('unallocated');
+        const mineralized = project(make({settings: {mineralize_list: {'铁块': true}}}), {'电路板': 120});
+        expect(branch(mineralized, '电路板', '铁块').production).toMatchObject({capacity: 120, buildings: 0, status: 'external'});
+        const {state, calculation} = synthetic({A: {B: 0.5}, B: {A: 0.5}}, {A: 80, B: 40});
+        const cyclic = buildDependencyView(state, {A: 60}, calculation);
+        expect(branch(cyclic, 'A', 'B', 'A').production).toMatchObject({capacity: null, buildings: null, status: 'unallocated'});
+    });
+});

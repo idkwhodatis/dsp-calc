@@ -50,7 +50,14 @@ const viewButton = name => within(screen.getByRole('group', {name: '生产结果
 const tree = () => screen.getByRole('region', {name: '依赖树生产视图'});
 const summary = () => screen.getByRole('complementary', {name: '生产统计'}).textContent;
 const flatRow = item => screen.getByRole('row', {name: `${item}全局产线`, exact: true});
-const occurrences = item => Array.from(tree().querySelectorAll('tr[data-product]')).filter(row => row.dataset.product === item);
+const occurrences = item => Array.from(tree().querySelectorAll('tr[data-product]')).filter(row => row.dataset.product === item && row.dataset.scope === 'branch');
+async function openGlobalSettings(user, row, item) {
+    const toggle = within(row).getByLabelText(`${item}全局来源设置`);
+    if (!toggle.closest('details').open) await user.click(toggle);
+}
+function globalFields(row) {
+    return Array.from(row.querySelector('.dsp-branch-global-settings table > tbody > tr').children, fieldSnapshot);
+}
 const sources = () => current.state.settings.production_sources;
 const scheme = () => current.state.scheme_data;
 const source = (id, item = '铜块', output = 0, patch = {}) => ({id, target_item: item, output_per_minute: output,
@@ -95,7 +102,7 @@ function configureGraphene() {
 }
 
 describe('editable dependency tree parity with the canonical production rows', () => {
-    it.each(['full', 'compact', 'narrow', 'mobile'])('retains every flat field and action beside a read-only branch quantity in %s mode', async mode => {
+    it.each(['full', 'compact', 'narrow', 'mobile'])('retains flat actions and settings beside read-only branch quantities in %s mode', async mode => {
         const {user} = mount({mode});
         const flatCells = Array.from(flatRow('铁块').children, fieldSnapshot);
         expect(flatCells).toHaveLength(9);
@@ -104,16 +111,20 @@ describe('editable dependency tree parity with the canonical production rows', (
         const row = occurrences('铁块')[0];
         const cells = Array.from(row.children);
         expect(cells).toHaveLength(10);
-        expect(cells.slice(1).map(fieldSnapshot)).toEqual(flatCells);
+        expect(cells.slice(1).filter((_, index) => index !== 2 && index !== 3).map(fieldSnapshot))
+            .toEqual(flatCells.filter((_, index) => index !== 2 && index !== 3));
+        expect(within(row).getByLabelText('铁块本支产能')).toHaveTextContent(/^300.00$/);
+        expect(within(row).getByLabelText('铁块本支工厂数量')).toHaveTextContent(/^5.00$/);
+        expect(within(row).queryByRole('textbox')).not.toBeInTheDocument();
         expect(row.querySelector('.dsp-item-name')).not.toHaveClass('sr-only');
         expect(within(cells[0]).getByLabelText('铁块本支需求')).toHaveTextContent(/^300.00$/);
         expect(cells[0].querySelectorAll('input, select, textarea')).toHaveLength(0);
         const headers = within(row.closest('table')).getAllByRole('columnheader').map(header => header.textContent);
-        expect(headers).toEqual(['依赖 / 本支需求', '操作', '物品', '全局产能 / min', '全局工厂数量',
-            '配方选取', '增产模式', '增产剂', '工厂类型', '物流估算']);
-        for (const input of within(row).getAllByRole('textbox')) expect(input).toBeVisible();
+        expect(headers).toEqual(['依赖 / 本支需求', '操作', '物品', '本支产能 / min', '本支工厂数量',
+            '配方选取', '增产模式', '增产剂', '工厂类型', '全局物流估算']);
+        expect(within(row).queryAllByRole('textbox')).toHaveLength(0);
         for (const button of within(cells.at(-1)).getAllByRole('button')) expect(button).toBeVisible();
-        expect(tree()).toHaveTextContent('重复出现不可相加');
+        expect(tree()).toHaveTextContent('每行产能和工厂数量只表示本支');
         expect(summary()).toBe(before);
     });
 
@@ -132,7 +143,7 @@ describe('editable dependency tree parity with the canonical production rows', (
             expect(within(row).getByRole('button', {name: '位面熔炉'})).toHaveAttribute('aria-pressed', 'true');
             expect(within(row).getByRole('button', {name: '增产', exact: true})).toHaveAttribute('aria-pressed', 'true');
             expect(within(row).getByRole('button', {name: /增产剂\s+Mk\.II$/})).toHaveAttribute('aria-pressed', 'true');
-            expect(within(row).getByRole('textbox', {name: '铜块产能，等比例调整需求'})).toHaveValue('60.00');
+            expect(within(row).getByLabelText('铜块本支产能')).toHaveTextContent(/^30.00$/);
         }
         await user.click(within(occurrences('铜块')[1]).getByRole('button', {name: '铜块配方 2', exact: true}));
         expect(scheme().item_recipe_choices['铜块']).toBe(2);
@@ -150,20 +161,39 @@ describe('editable dependency tree parity with the canonical production rows', (
         expect(within(flatRow('铜块')).getByRole('button', {name: /增产剂\s+Mk\.II$/})).toHaveAttribute('aria-pressed', 'true');
     });
 
-    it('scales every target through global capacity and factory-count inputs while leaving branch quantities read-only', async () => {
+    it('keeps branch quantities read-only while flat capacity and factory inputs still scale all targets', async () => {
         const {user} = mount({needs: {'铁块': 120, '铜块': 60}});
         await user.click(viewButton('树状'));
-        await edit(user, within(occurrences('铁块')[0]).getByRole('textbox', {name: '铁块产能，等比例调整需求'}), 240);
+        expect(within(occurrences('铁块')[0]).queryByRole('textbox')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('铁块本支产能')).toHaveTextContent(/^120.00$/);
+        expect(screen.getByLabelText('铁块本支工厂数量')).toHaveTextContent(/^2.00$/);
+        await user.click(viewButton('平铺'));
+        await edit(user, within(flatRow('铁块')).getByRole('textbox', {name: '铁块产能，等比例调整需求'}), 240);
         expect(current.needs).toEqual({'铁块': 240, '铜块': 120});
-        expect(screen.getByLabelText('铜块本支需求')).toHaveTextContent(/^120.00$/);
-        const count = within(occurrences('铁块')[0]).getByRole('textbox', {name: '铁块工厂数量，等比例调整需求'});
+        const count = within(flatRow('铁块')).getByRole('textbox', {name: '铁块工厂数量，等比例调整需求'});
         await edit(user, count, Number(count.value) * 2);
         expect(current.needs).toEqual({'铁块': 480, '铜块': 240});
         const before = summary();
-        await user.click(viewButton('平铺'));
-        expect(screen.getByRole('textbox', {name: '铁块产能，等比例调整需求'})).toHaveValue('480.00');
-        expect(screen.getByRole('textbox', {name: '铜块产能，等比例调整需求'})).toHaveValue('240.00');
+        await user.click(viewButton('树状'));
+        expect(screen.getByLabelText('铁块本支产能')).toHaveTextContent(/^480.00$/);
+        expect(screen.getByLabelText('铁块本支工厂数量')).toHaveTextContent(/^8.00$/);
+        expect(screen.getByLabelText('铜块本支产能')).toHaveTextContent(/^240.00$/);
         expect(summary()).toBe(before);
+    });
+
+    it('shows unequal shared copper capacities and factories instead of repeating the global total', async () => {
+        const {user} = mount({needs: {'电磁矩阵': 60, '电路板': 120}});
+        await user.click(viewButton('树状'));
+        await user.click(screen.getByRole('button', {name: '展开电路板的上游原料'}));
+        await user.click(screen.getByRole('button', {name: '展开磁线圈的上游原料'}));
+        const copper = occurrences('铜块');
+        expect(copper).toHaveLength(3);
+        expect(copper.map(row => within(row).getByLabelText('铜块本支产能').textContent).sort()).toEqual(['30.00', '30.00', '60.00']);
+        expect(copper.map(row => within(row).getByLabelText('铜块本支工厂数量').textContent).sort()).toEqual(['0.50', '0.50', '1.00']);
+        expect(copper.every(row => !row.querySelector('input'))).toBe(true);
+        await user.click(viewButton('平铺'));
+        expect(within(flatRow('铜块')).getByRole('textbox', {name: '铜块产能，等比例调整需求'})).toHaveValue('120.00');
+        expect(within(flatRow('铜块')).getByRole('textbox', {name: '铜块工厂数量，等比例调整需求'})).toHaveValue('2.00');
     });
 
     it.each(['click', 'keyboard'])('forks from the second shared occurrence with %s and keeps focus in that occurrence', async activation => {
@@ -181,7 +211,11 @@ describe('editable dependency tree parity with the canonical production rows', (
         const sameOccurrence = occurrences('铜块').find(element => element.dataset.rowInstance === instance);
         expect(sameOccurrence).toBeDefined();
         expect(within(sameOccurrence).getByRole('textbox', {name: '铜块现有产线 1分配产量'})).toHaveFocus();
+        expect(sameOccurrence.querySelector('.dsp-branch-global-settings')).toHaveAttribute('open');
         for (const copy of occurrences('铜块')) {
+            expect(within(copy).getByLabelText('铜块本支产能')).toHaveTextContent(/^30.00$/);
+            expect(within(copy).getByLabelText('铜块本支工厂数量')).toHaveTextContent(/^0.50$/);
+            await openGlobalSettings(user, copy, '铜块');
             expect(within(copy).getByRole('article', {name: '铜块现有产线 1'})).toHaveAttribute('data-source-id', sources()[0].id);
             expect(within(copy).getByRole('textbox', {name: '铜块现有产线 1分配产量'})).toHaveValue('0.00');
             expect(within(copy).getByLabelText('铜块需求产线产量')).toHaveTextContent(/^60.00$/);
@@ -197,7 +231,11 @@ describe('editable dependency tree parity with the canonical production rows', (
         const flatFields = Array.from(flatRow('铜块').children, fieldSnapshot);
         await sharedCopper(user);
         for (const copy of occurrences('铜块')) {
-            expect(Array.from(copy.children).slice(1).map(fieldSnapshot)).toEqual(flatFields);
+            expect(within(copy).getByLabelText('铜块本支产能')).toHaveTextContent('—');
+            expect(within(copy).getByLabelText('铜块本支工厂数量')).toHaveTextContent('—');
+            expect(copy.querySelector('.dsp-branch-global-settings')).not.toHaveAttribute('open');
+            await openGlobalSettings(user, copy, '铜块');
+            expect(globalFields(copy)).toEqual(flatFields);
             for (const input of within(copy).getAllByRole('textbox')) expect(input).toBeVisible();
             expect(within(copy).getByRole('button', {name: '添加铜块产线'})).toBeVisible();
             expect(within(copy).getByRole('button', {name: '删除铜块现有产线 1'})).toBeVisible();
@@ -227,7 +265,11 @@ describe('editable dependency tree parity with the canonical production rows', (
         await user.click(within(manual()).getByRole('button', {name: '删除铜块现有产线 1'}));
         expect(sources()).toEqual([]);
         expect(screen.queryByRole('region', {name: '铜块生产来源'})).not.toBeInTheDocument();
-        for (const copy of occurrences('铜块')) expect(within(copy).getByRole('textbox', {name: '铜块产能，等比例调整需求'})).toHaveValue('60.00');
+        for (const copy of occurrences('铜块')) {
+            expect(within(copy).getByLabelText('铜块本支产能')).toHaveTextContent(/^30.00$/);
+            expect(within(copy).getByLabelText('铜块本支工厂数量')).toHaveTextContent(/^0.50$/);
+            expect(within(copy).queryByRole('textbox')).not.toBeInTheDocument();
+        }
     });
 
     it('keeps summaries and saved calculations unchanged when expanding or collapsing repeated global editors', async () => {
@@ -256,8 +298,12 @@ describe('editable dependency tree parity with the canonical production rows', (
         const before = summary();
         await user.click(viewButton('树状'));
         const row = occurrences('氢')[0];
-        expect(Array.from(row.children).slice(1).map(fieldSnapshot)).toEqual(flatFields);
+        expect(within(row).getByLabelText('氢本支需求')).toHaveTextContent(/^30.00$/);
+        expect(within(row).getByLabelText('氢本支产能')).toHaveTextContent('—');
+        expect(within(row).getByLabelText('氢本支工厂数量')).toHaveTextContent('—');
         for (const copy of occurrences('氢')) {
+            await openGlobalSettings(user, copy, '氢');
+            expect(globalFields(copy)).toEqual(flatFields);
             expect(within(copy).getByLabelText('氢总需求')).toHaveTextContent(/^30.00$/);
             expect(within(copy).getByLabelText('氢需求产线产量')).toHaveTextContent(/^0.00$/);
             expect(within(copy).getByLabelText('氢副产来源 1产量')).toHaveTextContent(/^60.00$/);
@@ -305,6 +351,7 @@ describe('editable dependency tree parity with the canonical production rows', (
     it('restores a saved tree-edited plan with the exact source identity and count, then shows the same flat controls', async () => {
         const {user} = mount({sources: [source('iron-fixed', '铁块')]});
         await user.click(viewButton('树状'));
+        await openGlobalSettings(user, occurrences('铁块')[0], '铁块');
         const manual = () => within(occurrences('铁块')[0]).getByRole('article', {name: '铁块现有产线 1'});
         await edit(user, within(manual()).getByRole('textbox', {name: '铁块现有产线 1工厂数量'}), 1.23456789);
         await user.click(within(manual()).getByRole('button', {name: '位面熔炉'}));
@@ -318,6 +365,7 @@ describe('editable dependency tree parity with the canonical production rows', (
         act(() => current.loadPlan(saved, 'needs'));
         expect(viewButton('树状')).toHaveAttribute('aria-pressed', 'true');
         expect(sources()).toEqual(saved.settings.production_sources);
+        await openGlobalSettings(user, occurrences('铁块')[0], '铁块');
         expect(within(manual()).getByRole('textbox', {name: '铁块现有产线 1工厂数量'})).toHaveValue('1.23');
         expect(within(manual()).getByRole('textbox', {name: '铁块现有产线 1分配产量'})).toHaveValue(output);
         expectUniqueIds();
@@ -334,10 +382,11 @@ describe('editable dependency tree parity with the canonical production rows', (
         await user.click(within(occurrences('铁块')[0]).getByRole('button', {name: '将铁块视为原矿'}));
         expect(current.state.settings.mineralize_list).toHaveProperty('铁块');
         expect(current.needs).toEqual({'铁块': 300});
-        expect(within(occurrences('铁块')[0]).queryByRole('textbox', {name: '铁块工厂数量，等比例调整需求'})).not.toBeInTheDocument();
+        expect(within(occurrences('铁块')[0]).getByLabelText('铁块本支工厂数量')).toHaveTextContent(/^0.00$/);
+        expect(within(occurrences('铁块')[0]).getByText('外部供给，无需工厂')).toBeVisible();
         await user.click(within(occurrences('铁块')[0]).getByRole('button', {name: '恢复铁块生产'}));
         expect(current.state.settings.mineralize_list).not.toHaveProperty('铁块');
-        expect(within(occurrences('铁块')[0]).getByRole('textbox', {name: '铁块工厂数量，等比例调整需求'})).toHaveValue('5.00');
+        expect(within(occurrences('铁块')[0]).getByLabelText('铁块本支工厂数量')).toHaveTextContent(/^5.00$/);
         expect(current.needs).toEqual({'铁块': 300});
     });
 });

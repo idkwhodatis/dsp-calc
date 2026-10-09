@@ -149,7 +149,7 @@ function BranchCell({node, canonical, viewModel, settings, unit, expanded, onTog
                 <div className="max-w-80 space-y-1 whitespace-normal pt-1">
                     {node.kind === 'remaining' ? <p>此物品未出现在当前依赖投影中；保留原有全局产线与操作，不新增需求</p>
                         : <NodeNotes node={node} canonical={canonical} viewModel={viewModel} settings={settings} unit={unit} onShowGlobal={onShowGlobal}/>}
-                    <p>右侧产能、建筑和来源均为全局值，重复出现不可相加；编辑会修改同一个全局计划</p>
+                    <p>{node.scope === 'branch' ? '本支产能和工厂数量只读；配方、增产与工厂类型仍修改同一个全局计划，物流另列全局估算' : '右侧产能、建筑和来源均为全局值，重复出现不可相加；编辑会修改同一个全局计划'}</p>
                     <GlobalLink node={node} canonical={canonical} onShowGlobal={onShowGlobal}/>
                 </div>
             </details>
@@ -170,13 +170,13 @@ function DependencyTable({roots, global, remaining, viewModel, settings, unit, e
         <div className="dsp-dependency-table-scroll max-h-[70dvh] max-w-full overflow-auto overscroll-x-contain focus-visible:outline-2"
             role="region" aria-label={`${label}表，可横向滚动`} tabIndex={0}>
             <table id={tableId} className="dsp-dependency-table w-auto border-collapse text-base [&_td]:align-middle">
-                <caption className="sr-only">{full ? '依赖树生产视图，本支需求只读；右侧为可编辑的全局生产信息，重复值不可相加'
+                <caption className="sr-only">{full ? global || remaining ? '全局生产信息与设置，重复值不可相加' : '依赖树生产视图，本支需求、产能与工厂数量只读；生产设置共享全局计划'
                     : global ? '全局产线与投入，已计入全局计算，不是新增需求' : '目标依赖只读视图，本支需求不是全局生产量'}</caption>
                 <thead className="sticky top-0 z-10 border-b bg-muted shadow-[0_1px_0_var(--border)]">
                     <tr className="text-left whitespace-nowrap text-muted-foreground">
                         {full ? <>
                             <th scope="col" className={`${CELL_CLASS} font-medium`}>{remaining ? '全局引用' : global ? '依赖 / 全局数量' : '依赖 / 本支需求'}</th>
-                            <ProductionColumns unit={unit} global/>
+                            <ProductionColumns unit={unit} global={global || remaining} branch={!global && !remaining}/>
                         </> : <>
                             <th scope="col" className={`${CELL_CLASS} font-medium`}>物品</th>
                             <th scope="col" className={`${CELL_CLASS} text-right font-medium`}>{global ? '全局数量' : '本支需求'} / {unit}</th>
@@ -195,7 +195,7 @@ function DependencyTable({roots, global, remaining, viewModel, settings, unit, e
                         const leadingCell = <BranchCell node={node} canonical={canonical} viewModel={viewModel} settings={settings} unit={unit}
                             expanded={expanded} onToggle={onToggle} onShowGlobal={onShowGlobal}/>;
                         if (row) return <CanonicalProductionRow key={node.id} row={row} instanceId={`${tableId}-${node.id}`}
-                            rowProps={rowProps} leadingCell={leadingCell}/>;
+                            rowProps={rowProps} leadingCell={leadingCell} branch={node.scope === 'branch' ? node : undefined} settings={settings}/>;
                         return <tr key={node.id} {...rowProps}>
                             {leadingCell}
                             <td colSpan={9} className={CELL_CLASS}>
@@ -250,7 +250,7 @@ export function DependencyOverview({viewModel, settings, onShowGlobal, canonical
     }
     const props = {viewModel, settings, unit, expanded, onToggle: toggle, onShowGlobal, canonicalRows, iconSize: compactMode === 'mobile' ? 24 : 40};
     return <section className="dsp-dependency-overview w-fit min-w-0 max-w-full flex-[0_1_auto] space-y-4 p-2 text-base" aria-label={full ? '依赖树生产视图' : '依赖树只读视图'}>
-        {full && <p className="max-w-prose text-base text-muted-foreground">每行右侧保留完整生产操作；产能、建筑、来源和物流都是同一个全局计划的值，重复出现不可相加，任一处编辑都会同步全局计划</p>}
+        {full && <p className="max-w-prose text-base text-muted-foreground">每行产能和工厂数量只表示本支，数量只读；配方、增产与工厂类型修改会同步全局计划。多来源未分配到支路时显示 —，可展开全局来源设置；物流仍为全局估算</p>}
         <p className="max-w-prose text-base text-muted-foreground">本支需求只表示当前分支的原料需求；共享物料可在不同分支出现，请勿相加作为全局生产量</p>
         {roots.length > 0 ? <DependencyTable {...props} roots={roots} tableId={`${prefix}-demand`}/>
             : <p className="rounded-lg border px-3 py-4 text-base text-muted-foreground">添加正数目标需求后可查看依赖树</p>}

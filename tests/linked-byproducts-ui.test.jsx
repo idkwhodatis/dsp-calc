@@ -245,12 +245,16 @@ describe('read-only linked byproduct production cards', () => {
         expect(stored()[0]).toMatchObject({id: 'graphene-a', output_per_minute: 120});
     });
 
-    it('shows the linked group directly in the tree and navigates to its original manual parent', async () => {
+    it('opens the global linked group from an unallocated branch and navigates to its original manual parent', async () => {
         const user = userEvent.setup();
         mount({sources: [source('graphene-a', 120)], mode: 'mobile'});
         const before = summary().textContent;
         await user.click(viewButton('树状'));
         const demandTable = screen.getByRole('region', {name: '目标依赖表，可横向滚动'});
+        expect(within(demandTable).getByLabelText('氢本支产能')).toHaveTextContent('—');
+        expect(within(demandTable).getByLabelText('氢本支工厂数量')).toHaveTextContent('—');
+        expect(within(demandTable).getByRole('article', {name: '氢副产来源 1'})).not.toBeVisible();
+        await user.click(within(demandTable).getByLabelText('氢全局来源设置'));
         const treeLink = within(demandTable).getByRole('article', {name: '氢副产来源 1'});
         expect(within(treeLink).getByLabelText('氢副产来源 1产量')).toHaveTextContent(/^60.00$/);
         await user.click(within(treeLink).getByRole('button', {name: '查看石墨烯现有产线 1（氢副产来源 1）'}));

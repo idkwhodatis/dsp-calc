@@ -18,8 +18,9 @@ const add = (map, item, rate) => map.set(item, (map.get(item) || 0) + rate);
  * rows: depth-first roots followed by supplyRoots, useful for a compact table.
  * items/sources: canonical records to link to the ONE existing global editor.
  *
- * Branch rates are recipe requirements, NOT independent factories, allocations,
- * gross recirculation or summable production totals. A pooled supply terminates
+ * Branch rates are net recipe requirements. Known single-source occurrences
+ * also expose gross capacity and fractional factory requirements, not physical
+ * independent allocations or summable whole-factory totals. A pooled supply terminates
  * a branch and points to its canonical records, rather than guessing routing.
  *
  * maxExpandedNodes bounds non-root occurrences. Every requested target and
@@ -43,7 +44,20 @@ export function buildDependencyView(state, needs, calculation, options = {}) {
         const invalidFlow = [line.output, line.gross_output ?? line.output,
             ...Object.values(line.inputs || {}), ...Object.values(line.byproducts || {})]
             .some(value => value !== undefined && !Number.isFinite(Number(value)));
+        const recipeId = state.item_data?.[item]?.[state.scheme_data?.item_recipe_choices?.[item]];
+        const recipe = state.game_data?.recipe_data?.[recipeId];
+        const scheme = state.scheme_data?.scheme_for_recipe?.[recipeId];
+        const factory = state.game_data?.factory_data?.[recipe?.设施]?.[scheme?.建筑];
+        const perFactory = Number(graph[item]?.产出倍率) * Number(factory?.倍率)
+            * (settings.is_time_unit_minute ? 60 : 1);
+        // Keep physical fractions unrounded. Legacy UI offsets belong only in formatting.
+        const buildings = line.buildings ?? (kind === 'automatic' && perFactory > 0
+            ? positive(line.output) / perFactory : null);
         return {
+            factoryName: line.factory_name || factory?.名称 || null,
+            sharedCollector: Boolean(line.shared_collector_group),
+            buildings: Number.isFinite(buildings) && buildings >= 0 ? buildings : null,
+            displayOffset: line.buildings == null ? 0.49994 * 0.1 ** Number(settings.fixed_num ?? 2) : 0,
             id: `${kind}:${sourceId}`, sourceId, kind, item,
             uiId: kind === 'automatic' ? `auto:${item}` : kind === 'manual' ? sourceId : null,
             canonicalId: `dependency-source:${encodeURIComponent(kind)}:${encodeURIComponent(sourceId)}`,
@@ -189,7 +203,8 @@ export function buildDependencyView(state, needs, calculation, options = {}) {
             occurrence.reason = 'unknown-item';
             return;
         }
-        if (canonical.mineralized) {
+        if (canonical.mineralized && !canonical.boundaryReasons.some(reason =>
+            ['manual-supply', 'byproduct-supply', 'invalid-source'].includes(reason))) {
             occurrence.reason = 'mineralized';
             if (canonical.automaticSourceId) coveredSources.add(canonical.automaticSourceId);
             return;
@@ -236,7 +251,21 @@ export function buildDependencyView(state, needs, calculation, options = {}) {
         if (!root.reason) expandInputs(root, source.inputs, new Map([[source.item, root.id]]));
         supplyRoots.push(root);
     }
-    for (const occurrence of rows) occurrence.shared = (items[occurrence.item]?.occurrenceIds.length || 0) > 1;
+    for (const occurrence of rows) {
+        occurrence.shared = (items[occurrence.item]?.occurrenceIds.length || 0) > 1;
+        if (occurrence.scope !== 'branch') continue;
+        const canonical = items[occurrence.item];
+        const source = sourcesById[canonical?.automaticSourceId];
+        const unallocated = ['global-supply', 'cycle', 'missing-supply', 'unknown-item', 'invalid-source', 'invalid-flow'].includes(occurrence.reason);
+        const factor = source?.outputRate > EPSILON ? occurrence.branchRate / source.outputRate : null;
+        occurrence.production = occurrence.reason === 'mineralized'
+            ? {capacity: occurrence.branchRate, buildings: 0, displayOffset: 0, status: 'external'}
+            : !unallocated && factor !== null
+                ? {capacity: source.grossRate * factor,
+                    buildings: source.buildings === null ? null : source.buildings * factor,
+                    displayOffset: source.displayOffset, factoryName: source.factoryName, sharedCollector: source.sharedCollector, status: 'recipe'}
+                : {capacity: null, buildings: null, displayOffset: 0, status: 'unallocated'};
+    }
     return {roots, supplyRoots, rows, items, sources: sourcesById, warnings,
         limits: {maxExpandedNodes, maxDepth, expandedNodes, truncated}};
 }

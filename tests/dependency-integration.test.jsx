@@ -66,8 +66,10 @@ describe('flat and dependency view integration', () => {
         await user.click(screen.getByRole('button', {name: '展开磁线圈的上游原料'}));
         expect(screen.getAllByLabelText('铜块本支需求')).toHaveLength(2);
         for (const output of screen.getAllByLabelText('铜块本支需求')) expect(output).toHaveTextContent(/^30.00$/);
-        expect(screen.getAllByRole('textbox', {name: '铜块产能，等比例调整需求'})).toHaveLength(2);
-        for (const input of screen.getAllByRole('textbox', {name: '铜块产能，等比例调整需求'})) expect(input).toHaveValue('60.00');
+        expect(screen.getAllByLabelText('铜块本支产能')).toHaveLength(2);
+        for (const output of screen.getAllByLabelText('铜块本支产能')) expect(output).toHaveTextContent(/^30.00$/);
+        for (const output of screen.getAllByLabelText('铜块本支工厂数量')) expect(output).toHaveTextContent(/^0.50$/);
+        expect(screen.queryByRole('textbox', {name: '铜块产能，等比例调整需求'})).not.toBeInTheDocument();
         expect(summary()).toBe(before);
         await user.click(screen.getByLabelText('电路板依赖说明'));
         await user.click(screen.getByRole('button', {name: '查看电路板全局产线'}));
@@ -92,6 +94,11 @@ describe('flat and dependency view integration', () => {
         const before = summary();
         await user.click(treeButton());
         expect(screen.getByLabelText('重氢本支需求')).toHaveTextContent(/^60.00$/);
+        expect(screen.getByLabelText('重氢本支产能')).toHaveTextContent('—');
+        expect(screen.getByLabelText('重氢本支工厂数量')).toHaveTextContent('—');
+        const sourceToggle = screen.getByLabelText('重氢全局来源设置');
+        expect(sourceToggle.closest('details')).not.toHaveAttribute('open');
+        await user.click(sourceToggle);
         expect(screen.getAllByText(/现有产线供给；引用全局供给/).length).toBeGreaterThan(0);
         for (const input of screen.getAllByRole('textbox', {name: '重氢现有产线 1分配产量'})) expect(input).toHaveValue('30.00');
         expect(summary()).toBe(before);
