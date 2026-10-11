@@ -42,18 +42,18 @@ export function PausedProductionSources({sources, onEnable, onRemove}) {
 export function ProductionSourceCard({item, source, automatic, ordinal, output, buildings, factory_name,
     recipe_choice, recipe_id, building, proliferator_mode, proliferator_points,
     onOutputChange, onBuildingsChange, onRecipeChange, onRecipeFork, onFactoryChange, onModeChange, onPointsChange, onRemove,
-    is_mineralized = false, sharedGroup}) {
+    is_mineralized = false, sharedGroup, controlItem = item, physicalSourceId, outputByproducts, onAddByproductSource}) {
     const {settings, game_data, item_data} = useContext(GlobalStateContext);
-    const knownItem = Object.hasOwn(item_data, item);
-    const displayRecipeId = recipe_id ?? (knownItem ? item_data[item]?.[recipe_choice] ?? item_data[item]?.[1] : undefined);
+    const knownItem = Object.hasOwn(item_data, controlItem);
+    const displayRecipeId = recipe_id ?? (knownItem ? item_data[controlItem]?.[recipe_choice] ?? item_data[controlItem]?.[1] : undefined);
     const validRecipe = Boolean(knownItem && game_data.recipe_data[displayRecipeId]);
     const fixed = settings.fixed_num;
     const unit = settings.is_time_unit_minute ? 'min' : 's';
-    const label = automatic ? '需求产线' : `现有产线 ${ordinal}`;
+    const label = automatic ? controlItem === item ? '需求产线' : `联产产线（${controlItem}配方）` : `现有产线 ${ordinal}`;
     const name = `${item}${label}`;
     const quantityMode = source?.quantity_mode === 'buildings' ? 'buildings' : 'rate';
     const actualRecipeId = knownItem && Number.isInteger(Number(recipe_choice)) && Number(recipe_choice) >= 1
-        ? item_data[item]?.[recipe_choice] : undefined;
+        ? item_data[controlItem]?.[recipe_choice] : undefined;
     const actualRecipe = game_data.recipe_data[actualRecipeId];
     const factory = actualRecipe && game_data.factory_data[actualRecipe.设施]?.[building];
     const countUnavailable = is_mineralized ? '外部供给，无需工厂'
@@ -66,7 +66,7 @@ export function ProductionSourceCard({item, source, automatic, ordinal, output, 
     // Each field is a column in one source strip. Only recipes and error text may
     // wrap within their own field; additional sources stack beneath this one.
     return <article className={cn('dsp-source-card dsp-source-strip grid w-max shrink-0 grid-cols-[repeat(8,max-content)] items-start gap-x-5 gap-y-3 rounded-lg border bg-background px-3 py-4 text-base', automatic && 'bg-muted/20')}
-        tabIndex={-1} aria-label={name} data-source-id={automatic ? `auto:${item}` : source.id} data-source-kind={automatic ? 'automatic' : 'manual'}
+        tabIndex={-1} aria-label={name} data-source-id={physicalSourceId || (automatic ? `auto:${item}` : source.id)} data-source-kind={automatic ? 'automatic' : 'manual'}
         data-quantity-mode={automatic ? undefined : quantityMode} aria-description={automatic ? undefined : quantityHint}>
         <div data-source-field="identity" className="space-y-1.5 whitespace-nowrap">
             <h3 className="font-medium">{label}</h3>
@@ -98,7 +98,8 @@ export function ProductionSourceCard({item, source, automatic, ordinal, output, 
             </div>
         </div>
         {validRecipe && <><div data-source-field="recipe" className="space-y-1.5"><p className="text-base text-muted-foreground">配方选取</p>
-            <RecipeSelect item={item} choice={recipe_choice} onChange={onRecipeChange} onFork={onRecipeFork} compact="full"/>
+            {controlItem !== item && <p className="max-w-80 whitespace-normal text-sm text-muted-foreground">此联产来源沿用{controlItem}的配方设置；修改会更新实际来源产线。</p>}
+            <RecipeSelect item={controlItem} choice={recipe_choice} onChange={onRecipeChange} onFork={onRecipeFork} compact="full"/>
         </div>
         <div data-source-field="mode" className="space-y-1.5"><p className="text-base text-muted-foreground">增产模式</p>
             <ProModeSelect recipe_id={displayRecipeId} choice={proliferator_mode} onChange={onModeChange}/>
@@ -115,7 +116,24 @@ export function ProductionSourceCard({item, source, automatic, ordinal, output, 
                 aria-label={`删除${name}`} onClick={onRemove}>删除</Button></div>
         </div>}
         {source?.error && <p role="alert" className="col-span-full max-w-5xl whitespace-normal break-words text-base text-destructive">{source.error}</p>}
+        {outputByproducts && <div className="col-span-full"><ProductionByproducts products={outputByproducts} onAddSource={onAddByproductSource}/></div>}
     </article>;
+}
+
+/** Outputs belong to their physical source, including entirely unused surplus. */
+export function ProductionByproducts({products, onAddSource}) {
+    const rowInstance = useContext(ProductionRowInstanceContext);
+    const {settings} = useContext(GlobalStateContext);
+    const entries = Object.entries(products || {}).filter(([, amount]) => amount > 1e-8);
+    if (!entries.length) return null;
+    return <div className="dsp-production-byproducts mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+        <span>{rowInstance ? '全局副产物' : '副产物'}</span>{entries.map(([item, amount]) => <span key={item} className="inline-flex items-center gap-1 whitespace-nowrap">
+            <ItemIcon item={item} size={20} tooltip={false}/><span>{item}</span>
+            <output aria-label={`${item}副产物产量`} className="tabular-nums">{amount.toFixed(settings.fixed_num)}</output>
+            <span>/ {settings.is_time_unit_minute ? 'min' : 's'}</span>
+            {onAddSource && <Button type="button" variant="ghost" size="sm" className="h-6 px-1 text-xs" aria-label={`为${item}副产物添加独立产线`} onClick={() => onAddSource(item)}>＋ 产线</Button>}
+        </span>)}
+    </div>;
 }
 
 /** A read-only reference to output already credited by the calculation. */
@@ -129,8 +147,8 @@ export function ByproductSourceCard({item, source, ordinal, onShowParent}) {
         data-parent-source-id={source.parentSourceId}
         className="dsp-byproduct-source flex w-max max-w-5xl flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-dashed bg-muted/20 px-3 py-3 text-base">
         <div className="space-y-1">
-            <h3 className="flex items-center gap-2 font-medium"><ItemIcon item={source.parentItem} size={28} tooltip={false}/>
-                {source.sharedCollector ? '同组轨道采集' : <>现有产线 · {source.parentItem}副产</>}</h3>
+            <h3 className="flex items-center gap-2 font-medium"><ItemIcon item={item} size={28} tooltip={false}/>
+                {source.sharedCollector ? '同组轨道采集' : <>{item}副产物 · 来自{source.parentItem}产线</>}</h3>
             <p className="text-sm text-muted-foreground">{source.sharedCollector ? '氢与重氢联合产出，已计入供给' : `${parentLabel} · 已计入供给，随来源产线更新`}</p>
         </div>
         <div className="flex items-center gap-1.5 tabular-nums"><ItemIcon item={item} size={24} tooltip={false}/>

@@ -82,7 +82,7 @@ describe('read-only linked byproduct production cards', () => {
         expect(within(group).getByLabelText('氢合计生产')).toHaveTextContent('100.00 / min');
         expect(within(group).getAllByRole('article')).toHaveLength(2);
         expect(linked()).toHaveAttribute('data-parent-source-id', 'auto:石墨烯');
-        expect(within(linked()).getByRole('heading')).toHaveTextContent('现有产线 · 石墨烯副产');
+        expect(within(linked()).getByRole('heading')).toHaveTextContent('氢副产物 · 来自石墨烯产线');
         expect(stored()).toEqual([]);
         expect(JSON.parse(localStorage.getItem('auto_settings')).production_sources).toEqual([]);
         expect(linked().querySelectorAll('input, select, textarea')).toHaveLength(0);
@@ -108,13 +108,12 @@ describe('read-only linked byproduct production cards', () => {
         else expect(within(group).queryByText(/超额分配/)).not.toBeInTheDocument();
     });
 
-    it('keeps a surplus-only coproduct visible with zero true demand and no persisted hydrogen allocation', () => {
+    it('attaches surplus-only coproducts to their producer without a zero-demand main group', () => {
         mount({needs: {'石墨烯': 120}});
-        const group = screen.getByRole('region', {name: '氢生产来源'});
-        expect(within(group).getByLabelText('氢总需求')).toHaveTextContent(/^0.00$/);
-        expect(within(group).getByLabelText('氢需求产线产量')).toHaveTextContent(/^0.00$/);
-        expect(linkedOutput()).toHaveTextContent(/^60.00$/);
-        expect(within(group).getByText(/超额分配/)).toHaveTextContent('多余产物 60.00 / min');
+        expect(screen.queryByRole('region', {name: '氢生产来源'})).not.toBeInTheDocument();
+        const producer = screen.getByRole('row', {name: '石墨烯全局产线', exact: true});
+        expect(within(producer).getByLabelText('氢副产物产量')).toHaveTextContent(/^60.00$/);
+        expect(current.state.calculate(current.needs)[1].氢).toBe(60);
         expect(stored()).toEqual([]);
     });
 

@@ -38,7 +38,8 @@ const multiDescription = '铁块 × 2 + 铜块 × 3 + 硅石 × 4 → 电路板 
 
 function quantitySnapshot() {
     // Automatically balanced source-group quantities are read-only outputs.
-    const values = [...screen.getAllByRole('textbox'), ...document.querySelectorAll('[data-source-kind="automatic"] output')];
+    const values = [...screen.getAllByRole('textbox'), ...document.querySelectorAll('[data-source-kind="automatic"] [data-source-field] output')]
+        .filter(input => !input.closest('.dsp-inactive-automatic-route'));
     return Object.fromEntries(values.map(input => [input.getAttribute('aria-label'), input.value || input.textContent]));
 }
 function controlSnapshot() {

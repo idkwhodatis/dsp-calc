@@ -184,7 +184,8 @@ describe('active-plan fork lifecycle', () => {
     it('does not persist or revive a zero-allocation surplus fork even when the calculation needs standalone:true', async () => {
         let {user, unmount} = renderApp();
         await addItem(user, '精炼油');
-        await user.click(screen.getByRole('button', {name: '使用氢配方 2添加产线'}));
+        await user.click(screen.getByRole('button', {name: '为氢副产物添加独立产线'}));
+        await user.click(within(screen.getByRole('article', {name: '氢现有产线 1'})).getByRole('button', {name: '氢配方 2', exact: true}));
         expect(sourceInput('氢')).toHaveValue('0.00');
         expect(screen.getByLabelText('氢需求产线产量')).toHaveTextContent(/^0.00$/);
         expect(readStore('auto_settings').production_sources).toEqual([]);
@@ -194,7 +195,8 @@ describe('active-plan fork lifecycle', () => {
         ({user} = renderApp());
         await addItem(user, '精炼油');
         expect(screen.queryByRole('article', {name: '氢现有产线 1'})).not.toBeInTheDocument();
-        expect(rowsFor('氢')).toHaveLength(1);
+        expect(rowsFor('氢')).toHaveLength(0);
+        expect(screen.getByLabelText('氢副产物产量')).toHaveTextContent(/^30.00$/);
     }, 15000);
 
     it('restores a named complete needs plan only after explicit load, including targets and recipe configurations', async () => {

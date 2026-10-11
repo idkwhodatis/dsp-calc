@@ -1,7 +1,7 @@
 import {useContext, useMemo, useState, useEffect, useRef} from 'react';
 import {CompactModeContext, GlobalStateContext, SchemeDataSetterContext, SettingsSetterContext} from './contexts';
 import {ItemIcon} from './icon';
-import {ByproductSourceCard, PausedProductionSources, ProductionSourceCard, ProductionSourceGroup, SharedCollectorsSummary} from './natural_production_line';
+import {ByproductSourceCard, PausedProductionSources, ProductionSourceCard, ProductionSourceGroup, SharedCollectorsSummary, ProductionByproducts} from './natural_production_line';
 import {createProductionSource, fromDisplayRate, getProductionEnergy, isItemRequired, isMiningBuilding} from './production_sources.js';
 import {describeRecipe, HorizontalMultiButtonSelect, Recipe} from './recipe';
 import {AutoSizedInput} from './ui_components/auto_sized_input.jsx';
@@ -13,11 +13,40 @@ import {Tooltip, TooltipContent, TooltipTrigger} from './components/ui/tooltip';
 import {cn} from './lib/utils';
 import {estimateLogistics} from './logistics.js';
 import {LogisticsOverview} from './logistics_overview.jsx';
-import {buildLinkedByproducts} from './lib/linked-byproducts.js';
+import {buildProductionPresentation} from './lib/production-presentation.js';
 import {buildDependencyView} from './dependency_view.js';
 import {DependencyOverview} from './dependency_overview.jsx';
 import {CanonicalProductionRow, ProductionColumns, ProductionItemName} from './production_result_row.jsx';
 import {isPlanOwnedSource, targetIdentity} from './lib/plan-state.js';
+
+function AutomaticSourceRoute({item, inactive, children}) {
+    if (!inactive) return children;
+    return <details className="dsp-inactive-automatic-route order-last rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+        <summary className="cursor-default" aria-label={`${item}备用需求配方`}>{item}备用需求配方（当前无需生产）</summary>
+        <p className="py-2">当前需求由联产来源满足；这里保留此物品原有的配方设置。</p>
+        {children}
+    </details>;
+}
+
+function MovedAutomaticSourceCard({line, scheme, setScheme, onAddByproductSource}) {
+    const item = line.displayItem;
+    const controlItem = line.controlItem;
+    const recipeId = line.recipe_id;
+    const config = scheme.scheme_for_recipe[recipeId];
+    const updateConfig = patch => setScheme(previous => {
+        const next = structuredClone(previous);
+        Object.assign(next.scheme_for_recipe[recipeId], patch);
+        return next;
+    });
+    return <ProductionSourceCard key={line.id} item={item} controlItem={controlItem} physicalSourceId={line.sourceId}
+        automatic output={line.output} buildings={line.buildings} factory_name={line.factory_name} sharedGroup={line.sharedCollector}
+        recipe_id={recipeId} recipe_choice={scheme.item_recipe_choices[controlItem]} building={config.建筑}
+        proliferator_mode={config.增产模式} proliferator_points={config.增产点数}
+        onRecipeChange={value => setScheme(previous => ({...previous,
+            item_recipe_choices: {...previous.item_recipe_choices, [controlItem]: value}}))}
+        onFactoryChange={value => updateConfig({建筑: value})} onModeChange={value => updateConfig({增产模式: Number(value)})}
+        onPointsChange={value => updateConfig({增产点数: Number(value)})} outputByproducts={line.byproducts} onAddByproductSource={onAddByproductSource}/>;
+}
 
 const ValueWithDifference = ({currentValue, previousValue}) => {
     const global_state = useContext(GlobalStateContext);
@@ -227,13 +256,16 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         return res;
     }, [global_state, needs_list]);
 
-    const dependency_view = useMemo(() => view_mode === 'tree'
-        ? buildDependencyView(global_state, needs_list, [result_dict, lp_surplus_list, source_details]) : null,
-    [view_mode, global_state, needs_list, result_dict, lp_surplus_list, source_details]);
-
-    const linked_byproducts = useMemo(() => buildLinkedByproducts(global_state, needs_list,
+    const presentation = useMemo(() => buildProductionPresentation(global_state, needs_list,
         [result_dict, lp_surplus_list, source_details]),
     [global_state, needs_list, result_dict, lp_surplus_list, source_details]);
+
+    const dependency_view = useMemo(() => view_mode === 'tree'
+        ? buildDependencyView(global_state, needs_list, [result_dict, lp_surplus_list, source_details], {presentation}) : null,
+    [view_mode, global_state, needs_list, result_dict, lp_surplus_list, source_details, presentation]);
+
+    const linked_byproducts = {groups: presentation.groups,
+        byItem: Object.fromEntries(Object.entries(presentation.byItem).map(([item, value]) => [item, value.byproducts]))};
 
     function focus_global_line(item, sourceId) {
         const row = Array.from(result_ref.current?.querySelectorAll('tr[data-product]') || [])
@@ -327,23 +359,12 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
         return Number(amount) + offset;
     }
 
-    // Dict<item, Dict<from, quantity>>
-    let side_products = {};
-    Object.entries(result_dict).forEach(([item, item_count]) => {
-        const byproducts = source_details?.automatic?.[item]?.byproducts;
-        const products = byproducts || Object.fromEntries(Object.entries(item_graph[item]["副产物"]).map(([product, amount]) => [product, item_count * amount]));
-        Object.entries(products).forEach(([side_product, amount]) => {
-            side_products[side_product] = side_products[side_product] || {};
-            side_products[side_product][item] = amount;
-        });
-    });
-
-    for (const source of source_details?.sources || []) {
-        for (const [item, amount] of Object.entries(source.byproducts || {})) {
-            side_products[item] = side_products[item] || {};
-            side_products[item][source.target_item] = (side_products[item][source.target_item] || 0) + amount;
-        }
-    }
+    // Presentation ownership changes labels only; physical rates stay unchanged.
+    const side_products = Object.fromEntries(Object.entries(linked_byproducts.byItem).map(([item, sources]) => {
+        const parents = {};
+        for (const source of sources) parents[source.parentItem] = (parents[source.parentItem] || 0) + source.output;
+        return [item, parents];
+    }));
 
     function mineralize(item) {
         let new_mineralize_list = structuredClone(mineralize_list);
@@ -377,7 +398,7 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
     ));
 
     const production_sources = source_details?.sources || [];
-    const source_groups = source_details?.groups || {};
+    const source_groups = presentation.groups;
     const ordered_items = [...new Set([...(source_details?.order || Object.keys(result_dict)), ...Object.keys(source_groups), ...Object.keys(linked_byproducts.byItem)])];
 
     function add_source(item, recipe_choice = scheme_data.item_recipe_choices[item], focus_new_source = false) {
@@ -416,149 +437,165 @@ export function Result({needs_list, set_needs_list, show_ore_popup, set_show_ore
 
     // Mirror flat-row visibility before offering a jump to its physical owner.
     function is_global_line_visible(item) {
-        if (!has_item(item) || !ordered_items.includes(item)) return false;
+        if (!has_item(item) || !ordered_items.includes(item) || presentation.hiddenItems.has(item)) return false;
         const manual = production_sources.some(source => source.target_item === item);
         const linked = Boolean(linked_byproducts.byItem[item]?.length);
-        const output = Math.max(0, result_dict[item] || 0)
-            + Object.values(side_products[item] || {}).reduce((sum, amount) => sum + amount, 0);
+        const moved = presentation.byItem[item]?.lines.some(line => line.kind === 'automatic' && line.controlItem !== item && line.output > 1e-8 && !line.mineralized);
+        const output = presentation.groups[item]?.produced || 0;
         if (output < 1e-6 && !manual && !linked) return false;
         const recipe = game_data.recipe_data[item_data[item][scheme_data.item_recipe_choices[item]]];
-        return !(settings.hide_mines && !manual && !linked
+        return !(settings.hide_mines && !manual && !linked && !moved
             && (item in mineralize_list || Object.keys(recipe.原料).length < 1));
     }
 
-    let result_table_rows = [];
-    for (const i of ordered_items) {
-        if (!has_item(i)) continue;
-        side_products[i] = side_products[i] || {};
-        const item_sources = production_sources.filter(source => source.target_item === i);
-        const byproduct_sources = linked_byproducts.byItem[i] || [];
-        const automatic_amount = Math.max(0, result_dict[i] || 0);
-        const automatic_shared_group = source_details?.shared_collectors?.find(group => group.id === source_details?.automatic?.[i]?.shared_collector_group);
-        let total = automatic_amount + Object.values(side_products[i]).reduce((a, b) => a + b, 0);
-        if (total < 1e-6 && item_sources.length === 0 && byproduct_sources.length === 0) continue;
-        let recipe_id = item_data[i][scheme_data.item_recipe_choices[i]];
-        const is_mineralized = i in mineralize_list;
-        // External supply has no local factories. Hiding a mining row is only a
-        // display preference and must not remove its buildings or grid demand.
-        let factory_number = is_mineralized ? 0 : source_details?.automatic?.[i]?.buildings ?? get_factory_number(automatic_amount, i);
-        if (item_sources.length === 0 && byproduct_sources.length === 0 && settings.hide_mines && (is_mineralized || Object.keys(game_data.recipe_data[recipe_id]["原料"]).length < 1)) {
-            continue;
-        }
-        let from_side_products = Object.entries(side_products[i]).map(([from, amount]) =>
-            <div key={from} className="mt-1 flex items-center justify-end gap-0.5 whitespace-nowrap text-sm text-muted-foreground">+{amount.toFixed(fixed_num)} (<ItemIcon item={from} size={is_mobile ? 18 : 26}/>)
-            </div>
-        );
-        let factory_name = game_data.factory_data[game_data.recipe_data[recipe_id]["设施"]][scheme_data.scheme_for_recipe[recipe_id]["建筑"]]["名称"];
-        let row_class = is_mineralized ? "bg-muted/60" : "";
+    // Keep row construction outside the hook control-flow graph. This also
+    // makes the single physical-counting pass explicit before summary effects.
+    function buildResultRows() {
+        let result_table_rows = [];
+        for (const i of ordered_items) {
+            if (!has_item(i)) continue;
+            side_products[i] = side_products[i] || {};
+            const item_sources = production_sources.filter(source => source.target_item === i);
+            const byproduct_sources = linked_byproducts.byItem[i] || [];
+            const direct_source = presentation.byItem[i]?.lines.find(line => line.kind === 'automatic' && line.controlItem === i);
+            const moved_sources = (presentation.byItem[i]?.lines || []).filter(line => line.kind === 'automatic' && line.controlItem !== i && line.output > 1e-8);
+            const automatic_amount = direct_source ? Math.max(0, result_dict[i] || 0) : 0;
+            const automatic_shared_group = source_details?.shared_collectors?.find(group => group.id === source_details?.automatic?.[i]?.shared_collector_group);
+            let total = automatic_amount + moved_sources.reduce((sum, line) => sum + line.output, 0) + Object.values(side_products[i]).reduce((a, b) => a + b, 0);
+            if (total < 1e-6 && item_sources.length === 0 && byproduct_sources.length === 0) continue;
+            let recipe_id = item_data[i][scheme_data.item_recipe_choices[i]];
+            const is_mineralized = i in mineralize_list;
+            // External supply has no local factories. Hiding a mining row is only a
+            // display preference and must not remove its buildings or grid demand.
+            // Count original physical sources once, even when their display owner moves.
+            const physical_factory_number = is_mineralized ? 0 : source_details?.automatic?.[i]?.buildings ?? get_factory_number(Math.max(0, result_dict[i] || 0), i);
+            let factory_number = direct_source ? physical_factory_number : 0;
+            if (presentation.hiddenItems.has(i)) continue;
+            if (item_sources.length === 0 && byproduct_sources.length === 0 && moved_sources.length === 0 && settings.hide_mines && (is_mineralized || Object.keys(game_data.recipe_data[recipe_id]["原料"]).length < 1)) {
+                continue;
+            }
+            let from_side_products = Object.entries(side_products[i]).map(([from, amount]) =>
+                <div key={from} className="mt-1 flex items-center justify-end gap-0.5 whitespace-nowrap text-sm text-muted-foreground">+{amount.toFixed(fixed_num)} (<ItemIcon item={from} size={is_mobile ? 18 : 26}/>)
+                </div>
+            );
+            let factory_name = game_data.factory_data[game_data.recipe_data[recipe_id]["设施"]][scheme_data.scheme_for_recipe[recipe_id]["建筑"]]["名称"];
+            let row_class = is_mineralized ? "bg-muted/60" : "";
 
-        const change_recipe = (value) => {
-            set_scheme_data(old_scheme_data => {
-                let scheme_data = structuredClone(old_scheme_data);
-                scheme_data.item_recipe_choices[i] = value;
-                return scheme_data;
-            })
-        };
+            const change_recipe = (value) => {
+                set_scheme_data(old_scheme_data => {
+                    let scheme_data = structuredClone(old_scheme_data);
+                    scheme_data.item_recipe_choices[i] = value;
+                    return scheme_data;
+                })
+            };
 
-        const change_pro_num = (value) => {
-            set_scheme_data(old_scheme_data => {
-                let scheme_data = structuredClone(old_scheme_data);
-                scheme_data.scheme_for_recipe[recipe_id]["增产点数"] = value;
-                return scheme_data;
-            })
-        };
+            const change_pro_num = (value) => {
+                set_scheme_data(old_scheme_data => {
+                    let scheme_data = structuredClone(old_scheme_data);
+                    scheme_data.scheme_for_recipe[recipe_id]["增产点数"] = value;
+                    return scheme_data;
+                })
+            };
 
-        const change_pro_mode = (value) => {
-            set_scheme_data(old_scheme_data => {
-                let scheme_data = structuredClone(old_scheme_data);
-                scheme_data.scheme_for_recipe[recipe_id]["增产模式"] = value;
-                return scheme_data;
-            })
-        };
+            const change_pro_mode = (value) => {
+                set_scheme_data(old_scheme_data => {
+                    let scheme_data = structuredClone(old_scheme_data);
+                    scheme_data.scheme_for_recipe[recipe_id]["增产模式"] = value;
+                    return scheme_data;
+                })
+            };
 
-        const change_factory = (value) => {
-            set_scheme_data(old_scheme_data => {
-                let scheme_data = structuredClone(old_scheme_data);
-                scheme_data.scheme_for_recipe[recipe_id]["建筑"] = value;
-                return scheme_data;
-            })
-        };
+            const change_factory = (value) => {
+                set_scheme_data(old_scheme_data => {
+                    let scheme_data = structuredClone(old_scheme_data);
+                    scheme_data.scheme_for_recipe[recipe_id]["建筑"] = value;
+                    return scheme_data;
+                })
+            };
 
-        const ratioProps = {fixed_num, needs_list, set_needs_list};
-        const logistics = estimateLogistics(global_state, i, {automaticOutput: automatic_amount, manualSources: item_sources,
-            byproductSupply: Object.values(side_products[i]).reduce((sum, amount) => sum + amount, 0)});
-        const logisticsCell = <td className="dsp-logistics-cell w-24 px-2 py-3"><LogisticsOverview item={i} estimate={logistics}/></td>;
-        if (item_sources.length > 0 || byproduct_sources.length > 0) {
-            const group = source_groups[i] || linked_byproducts.groups[i];
-            const automatic_scheme = scheme_data.scheme_for_recipe[recipe_id];
-            const mineralizeControl = <Button type="button" variant="ghost" size="sm" className="h-8 px-1 text-base text-muted-foreground"
-                aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
-                onClick={() => is_mineralized ? unmineralize(i) : mineralize(i)}>{is_mineralized ? '恢复' : '原矿化'}</Button>;
-            result_table_rows.push(<tr key={i} data-product={i} tabIndex={-1} aria-label={`${i}全局产线`} className={cn('dsp-source-group-row border-b last:border-0 focus-visible:outline-2 focus-visible:outline-ring', row_class)}>
-                <td colSpan={8} className="px-2 py-3">
-                    <ProductionSourceGroup item={i} group={group} linkedByproductSupply={byproduct_sources.reduce((sum, source) => sum + source.output, 0)} onAdd={() => add_source(i)} mineralizeControl={mineralizeControl}
-                        totalControl={<output aria-label={`${i}总需求`} className="text-base font-semibold tabular-nums">{group.required.toFixed(fixed_num)}</output>}>
-                        <ProductionSourceCard item={i} sharedGroup={automatic_shared_group} automatic output={group.automatic} buildings={factory_number} factory_name={factory_name}
-                            recipe_id={recipe_id} recipe_choice={scheme_data.item_recipe_choices[i]} building={automatic_scheme['建筑']}
-                            proliferator_mode={automatic_scheme['增产模式']} proliferator_points={automatic_scheme['增产点数']}
-                            onRecipeChange={change_recipe} onRecipeFork={item_sources.length === 0 ? value => add_source(i, value, true) : undefined} onFactoryChange={change_factory} onModeChange={change_pro_mode} onPointsChange={change_pro_num}
-                            is_mineralized={is_mineralized}/>
-                        {item_sources.map((source, index) => <ProductionSourceCard key={source.id} item={i} sharedGroup={source_details?.shared_collectors?.find(group => group.id === source.shared_collector_group)} source={source} ordinal={index + 1}
-                            output={source.output} buildings={source.buildings} factory_name={source.factory_name}
-                            recipe_id={source.recipe_id} recipe_choice={source.recipe_choice} building={source.building}
-                            proliferator_mode={source.proliferator_mode} proliferator_points={source.proliferator_points}
-                            onOutputChange={value => update_source(source.id, {quantity_mode: 'rate', output_per_minute: fromDisplayRate(Number(value), settings)})}
-                            onBuildingsChange={value => update_source(source.id, {quantity_mode: 'buildings', building_quantity: Number(value)})}
-                            onRecipeChange={value => {
-                                const recipe = game_data.recipe_data[item_data[i][Number(value)]];
-                                const mode = source.proliferator_mode;
-                                const compatible_mode = mode > 0 && (recipe['增产'] & (1 << (mode - 1))) ? mode : recipe['增产'] === 8 ? 4 : 0;
-                                update_source(source.id, {recipe_choice: Number(value), building: 0, proliferator_mode: compatible_mode, migration_error: undefined});
-                            }}
-                            onFactoryChange={value => update_source(source.id, {building: Number(value)})}
-                            onModeChange={value => update_source(source.id, {proliferator_mode: Number(value)})}
-                            onPointsChange={value => update_source(source.id, {proliferator_points: Number(value)})}
-                            onRemove={() => remove_source(source.id)}/>)}
-                        {byproduct_sources.map((source, index) => <ByproductSourceCard key={source.id} item={i} source={source} ordinal={index + 1}
-                            onShowParent={is_global_line_visible(source.parentItem) ? () => show_global_line(source.parentItem, source.parentSourceId) : undefined}/>)}
-                    </ProductionSourceGroup>
+            const ratioProps = {fixed_num, needs_list, set_needs_list};
+            const logistics = estimateLogistics(global_state, i, {automaticOutput: automatic_amount, manualSources: item_sources,
+                // A presentation move does not invent a new sorter assessment.
+                byproductSupply: Object.values(side_products[i]).reduce((sum, amount) => sum + amount, 0) + moved_sources.reduce((sum, line) => sum + line.output, 0)});
+            const logisticsCell = <td className="dsp-logistics-cell w-24 px-2 py-3"><LogisticsOverview item={i} estimate={logistics}/></td>;
+            if (item_sources.length > 0 || byproduct_sources.length > 0 || moved_sources.length > 0) {
+                const group = source_groups[i] || linked_byproducts.groups[i];
+                const automatic_scheme = scheme_data.scheme_for_recipe[recipe_id];
+                const mineralizeControl = <Button type="button" variant="ghost" size="sm" className="h-8 px-1 text-base text-muted-foreground"
+                    aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
+                    onClick={() => is_mineralized ? unmineralize(i) : mineralize(i)}>{is_mineralized ? '恢复' : '原矿化'}</Button>;
+                result_table_rows.push(<tr key={i} data-product={i} tabIndex={-1} aria-label={`${i}全局产线`} className={cn('dsp-source-group-row border-b last:border-0 focus-visible:outline-2 focus-visible:outline-ring', row_class)}>
+                    <td colSpan={8} className="px-2 py-3">
+                        <ProductionSourceGroup item={i} group={group} linkedByproductSupply={byproduct_sources.reduce((sum, source) => sum + source.output, 0)} onAdd={() => add_source(i)} mineralizeControl={mineralizeControl}
+                            totalControl={<output aria-label={`${i}总需求`} className="text-base font-semibold tabular-nums">{group.required.toFixed(fixed_num)}</output>}>
+                            <AutomaticSourceRoute item={i} inactive={moved_sources.length > 0 && automatic_amount <= 1e-8 && item_sources.length === 0}>
+                            <ProductionSourceCard item={i} sharedGroup={automatic_shared_group} automatic output={automatic_amount} buildings={factory_number} factory_name={factory_name}
+                                recipe_id={recipe_id} recipe_choice={scheme_data.item_recipe_choices[i]} building={automatic_scheme['建筑']}
+                                proliferator_mode={automatic_scheme['增产模式']} proliferator_points={automatic_scheme['增产点数']}
+                                onRecipeChange={change_recipe} onRecipeFork={item_sources.length === 0 ? value => add_source(i, value, true) : undefined} onFactoryChange={change_factory} onModeChange={change_pro_mode} onPointsChange={change_pro_num}
+                                is_mineralized={is_mineralized} outputByproducts={direct_source?.byproducts} onAddByproductSource={item => add_source(item, scheme_data.item_recipe_choices[item], true)}/>
+                            </AutomaticSourceRoute>
+                            {moved_sources.map(line => <MovedAutomaticSourceCard key={line.id} line={line} scheme={scheme_data} setScheme={set_scheme_data} onAddByproductSource={item => add_source(item, scheme_data.item_recipe_choices[item], true)}/>)}
+                            {item_sources.map((source, index) => <ProductionSourceCard key={source.id} item={i} sharedGroup={source_details?.shared_collectors?.find(group => group.id === source.shared_collector_group)} source={source} ordinal={index + 1}
+                                output={source.output} buildings={source.buildings} factory_name={source.factory_name}
+                                recipe_id={source.recipe_id} recipe_choice={source.recipe_choice} building={source.building}
+                                proliferator_mode={source.proliferator_mode} proliferator_points={source.proliferator_points}
+                                onOutputChange={value => update_source(source.id, {quantity_mode: 'rate', output_per_minute: fromDisplayRate(Number(value), settings)})}
+                                onBuildingsChange={value => update_source(source.id, {quantity_mode: 'buildings', building_quantity: Number(value)})}
+                                onRecipeChange={value => {
+                                    const recipe = game_data.recipe_data[item_data[i][Number(value)]];
+                                    const mode = source.proliferator_mode;
+                                    const compatible_mode = mode > 0 && (recipe['增产'] & (1 << (mode - 1))) ? mode : recipe['增产'] === 8 ? 4 : 0;
+                                    update_source(source.id, {recipe_choice: Number(value), building: 0, proliferator_mode: compatible_mode, migration_error: undefined});
+                                }}
+                                onFactoryChange={value => update_source(source.id, {building: Number(value)})}
+                                onModeChange={value => update_source(source.id, {proliferator_mode: Number(value)})}
+                                onPointsChange={value => update_source(source.id, {proliferator_points: Number(value)})}
+                                onRemove={() => remove_source(source.id)} outputByproducts={presentation.lines.find(line => line.kind === 'manual' && line.sourceId === source.id)?.byproducts} onAddByproductSource={item => add_source(item, scheme_data.item_recipe_choices[item], true)}/>)}
+                            {byproduct_sources.map((source, index) => <ByproductSourceCard key={source.id} item={i} source={source} ordinal={index + 1}
+                                onShowParent={is_global_line_visible(source.parentItem) ? () => show_global_line(source.parentItem, source.parentSourceId) : undefined}/>)}
+                        </ProductionSourceGroup>
+                    </td>
+                    {logisticsCell}
+                </tr>);
+                continue;
+            }
+            result_table_rows.push(<tr className={cn("border-b last:border-0 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring", row_class)} key={i} data-product={i} tabIndex={-1} aria-label={`${i}全局产线`}>
+                <td className="px-2 py-3">
+                    <Button type="button" variant="ghost" size="sm" className="h-7 whitespace-nowrap px-1 text-sm text-muted-foreground"
+                        aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
+                        onClick={() => is_mineralized ? unmineralize(i) : mineralize(i)}>
+                        {is_mineralized ? '恢复' : '原矿化'}
+                    </Button>
                 </td>
+                <td className="px-2 py-3">
+                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <ItemIcon item={i} tooltip={is_compact} size={is_mobile ? 24 : 40}/>
+                        <ProductionItemName item={i} compact={is_compact}/>
+                    </div>
+                    <ProductionByproducts products={direct_source?.byproducts} onAddSource={item => add_source(item, scheme_data.item_recipe_choices[item], true)}/>
+                </td>
+                <td className="px-2 py-3 text-right">
+                    <RatioAdjustInput value={source_details?.automatic?.[i]?.gross_output ?? get_gross_output(automatic_amount, i)} {...ratioProps} label={`${i}产能，等比例调整需求`}/>
+                    {from_side_products}
+                </td>
+                <td className="px-2 py-3 whitespace-nowrap">
+                    {!is_mineralized ? <div className="inline-flex items-center gap-1">
+                        <ItemIcon item={factory_name} size={is_mobile ? 20 : 30}/>
+                        <RatioAdjustInput value={factory_number} {...ratioProps} label={`${i}工厂数量，等比例调整需求`}/>
+                    </div> : <span className="text-muted-foreground">—</span>}
+                    {automatic_shared_group && <p className="mt-1 text-xs text-muted-foreground">共享采集 · 同组共 {automatic_shared_group.building_count} 台</p>}
+                </td>
+                <td className="px-2 py-3"><RecipeSelect item={i} onChange={change_recipe} onFork={value => add_source(i, value, true)} choice={scheme_data.item_recipe_choices[i]} compact={compact_mode}/></td>
+                <td className="px-2 py-3"><ProModeSelect recipe_id={recipe_id} onChange={change_pro_mode} choice={scheme_data.scheme_for_recipe[recipe_id]["增产模式"]}/></td>
+                <td className="px-2 py-3"><ProNumSelect onChange={change_pro_num} choice={scheme_data.scheme_for_recipe[recipe_id]["增产点数"]} icon_size={mob_btn_icon}/></td>
+                <td className="px-2 py-3"><FactorySelect recipe_id={recipe_id} onChange={change_factory} choice={scheme_data.scheme_for_recipe[recipe_id]["建筑"]} icon_size={mob_btn_icon}/></td>
                 {logisticsCell}
             </tr>);
-            continue;
         }
-        result_table_rows.push(<tr className={cn("border-b last:border-0 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring", row_class)} key={i} data-product={i} tabIndex={-1} aria-label={`${i}全局产线`}>
-            <td className="px-2 py-3">
-                <Button type="button" variant="ghost" size="sm" className="h-7 whitespace-nowrap px-1 text-sm text-muted-foreground"
-                    aria-label={is_mineralized ? `恢复${i}生产` : `将${i}视为原矿`}
-                    onClick={() => is_mineralized ? unmineralize(i) : mineralize(i)}>
-                    {is_mineralized ? '恢复' : '原矿化'}
-                </Button>
-            </td>
-            <td className="px-2 py-3">
-                <div className="flex items-center gap-1.5 whitespace-nowrap">
-                    <ItemIcon item={i} tooltip={is_compact} size={is_mobile ? 24 : 40}/>
-                    <ProductionItemName item={i} compact={is_compact}/>
-                </div>
-            </td>
-            <td className="px-2 py-3 text-right">
-                <RatioAdjustInput value={source_details?.automatic?.[i]?.gross_output ?? get_gross_output(automatic_amount, i)} {...ratioProps} label={`${i}产能，等比例调整需求`}/>
-                {from_side_products}
-            </td>
-            <td className="px-2 py-3 whitespace-nowrap">
-                {!is_mineralized ? <div className="inline-flex items-center gap-1">
-                    <ItemIcon item={factory_name} size={is_mobile ? 20 : 30}/>
-                    <RatioAdjustInput value={factory_number} {...ratioProps} label={`${i}工厂数量，等比例调整需求`}/>
-                </div> : <span className="text-muted-foreground">—</span>}
-                {automatic_shared_group && <p className="mt-1 text-xs text-muted-foreground">共享采集 · 同组共 {automatic_shared_group.building_count} 台</p>}
-            </td>
-            <td className="px-2 py-3"><RecipeSelect item={i} onChange={change_recipe} onFork={value => add_source(i, value, true)} choice={scheme_data.item_recipe_choices[i]} compact={compact_mode}/></td>
-            <td className="px-2 py-3"><ProModeSelect recipe_id={recipe_id} onChange={change_pro_mode} choice={scheme_data.scheme_for_recipe[recipe_id]["增产模式"]}/></td>
-            <td className="px-2 py-3"><ProNumSelect onChange={change_pro_num} choice={scheme_data.scheme_for_recipe[recipe_id]["增产点数"]} icon_size={mob_btn_icon}/></td>
-            <td className="px-2 py-3"><FactorySelect recipe_id={recipe_id} onChange={change_factory} choice={scheme_data.scheme_for_recipe[recipe_id]["建筑"]} icon_size={mob_btn_icon}/></td>
-            {logisticsCell}
-        </tr>);
+        return result_table_rows;
     }
+    const result_table_rows = buildResultRows();
 
     // The engine includes each independent source exactly once in global totals.
     if (source_details?.totals) {

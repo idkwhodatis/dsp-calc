@@ -254,8 +254,9 @@ describe('ordinary-row recipe fork shortcut', () => {
     it('keeps a surplus-only fork visible for calculation while its lifecycle stays plan-scoped', async () => {
         const user = userEvent.setup();
         render(<Overview initialNeeds={{'精炼油': 60}}/>);
-        expect(productOrder()).toContain('氢');
-        await user.click(screen.getByRole('button', {name: forkName('氢', 2)}));
+        expect(productOrder()).not.toContain('氢');
+        await user.click(screen.getByRole('button', {name: '为氢副产物添加独立产线'}));
+        await user.click(within(manual('氢')).getByRole('button', {name: '氢配方 2', exact: true}));
         expect(activeSources()[0]).toMatchObject({target_item: '氢', recipe_choice: 2, output_per_minute: 0, standalone: true, scope: 'plan'});
         expect(savedSources()).toEqual([]);
         expect(screen.getByRole('region', {name: '氢生产来源'})).toBeInTheDocument();

@@ -55,7 +55,10 @@ function synthetic({settings = {}, production = {'石墨烯': 120}, automatic, s
         item_graph: {'石墨烯': {原料: {}, 副产物: {'氢': 0.5}}, '氢': {原料: {}, 副产物: {}}, '可燃冰': {原料: {}, 副产物: {}}}};
     const calculation = [production, {}, automatic || sources.length || legacy_sources.length
         ? {automatic: automatic || {}, sources, legacy_sources, order: order || Object.keys(production)} : undefined];
-    return {state, calculation, view: buildDependencyView(state, {'氢': 60}, calculation)};
+    // This fixture tests hydrogen as a coproduct. Both products must have
+    // demand so the demand-first projection retains the graphene owner.
+    const needs = {'氢': 60, ...(production.石墨烯 > 0 ? {'石墨烯': production.石墨烯} : {})};
+    return {state, calculation, view: buildDependencyView(state, needs, calculation)};
 }
 
 describe('read-only linked coproduct references in the dependency tree', () => {
@@ -125,6 +128,20 @@ describe('read-only linked coproduct references in the dependency tree', () => {
         expect(view.supplyRoots.some(root => root.item === '氢')).toBe(false);
     });
 
+    it('links a moved automatic process through its display owner and original physical editor ID', async () => {
+        const user = userEvent.setup();
+        const {state} = createScenario(api, {recipes: {'石墨烯': 1, '氢': 2}});
+        const needs = {'太阳帆': 60, '氢': 10};
+        const view = buildDependencyView(state, needs, state.calculate(needs));
+        const {onShowGlobal} = show(view, state.settings);
+        const demand = within(hydrogenDemand());
+        expect(view.sources['automatic:automatic-氢']).toMatchObject({item: '石墨烯', controlItem: '氢', uiId: 'auto:氢'});
+        expect(demand.getByLabelText('氢来自石墨烯需求产线的全局副产物供给')).toHaveTextContent(/^15.00$/);
+        await user.click(demand.getByRole('button', {name: '查看石墨烯需求产线（氢副产物来源）'}));
+        expect(onShowGlobal).toHaveBeenCalledExactlyOnceWith('石墨烯', 'auto:氢');
+        expect(view.supplyRoots.some(root => root.item === '氢')).toBe(false);
+    });
+
     it('keeps coproduct-only receiving groups visible with hide_mines but does not link a hidden parent', () => {
         const {view, state} = synthetic({settings: {hide_mines: true, mineralize_list: {'氢': true}}});
         show(view, state.settings);
@@ -174,14 +191,16 @@ describe('read-only linked coproduct references in the dependency tree', () => {
         Object.assign(state.item_data, {'重氢': [], '能量矩阵': []});
         Object.assign(state.item_graph, {'重氢': {原料: {'氢': 1}, 副产物: {}}, '能量矩阵': {原料: {'氢': 1}, 副产物: {}}});
         Object.assign(calculation[0], {'重氢': 20, '能量矩阵': 40});
-        const view = buildDependencyView(state, {'重氢': 20, '能量矩阵': 40}, calculation);
+        const view = buildDependencyView(state, {'重氢': 20, '能量矩阵': 40, '石墨烯': 120}, calculation);
         show(view);
         expect(screen.getAllByLabelText('氢本支需求').map(output => output.textContent)).toEqual(['20.00', '40.00']);
         expect(screen.getAllByLabelText('氢来自石墨烯需求产线的全局副产物供给').map(output => output.textContent)).toEqual(['60.00', '60.00']);
         expect(view.items.氢.byproductRate).toBe(60);
         expect(view.items.氢.coproductSourceIds).toHaveLength(1);
-        expect(view.supplyRoots.filter(root => root.item === '石墨烯')).toHaveLength(1);
+        expect(view.roots.filter(root => root.item === '石墨烯')).toHaveLength(1);
+        expect(view.supplyRoots.filter(root => root.item === '石墨烯')).toHaveLength(0);
         expect(view.supplyRoots.some(root => root.item === '氢')).toBe(false);
-        expect(view.roots.every(root => root.children[0].reason === 'global-supply' && root.children[0].children.length === 0)).toBe(true);
+        expect(view.roots.filter(root => root.item !== '石墨烯')
+            .every(root => root.children[0].reason === 'global-supply' && root.children[0].children.length === 0)).toBe(true);
     });
 });

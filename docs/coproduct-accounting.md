@@ -19,6 +19,16 @@ X-ray cracking's hydrogen figure is **net**: the gross hydrogen output also incl
 
 The regression tests exercise automatic-only plans, zero allocations, manual allocation against either output, multiple lines, changed building/proliferator settings, and excess supply. A partial manual source and the automatic remainder retain the required total physical execution. Extra supply appears as surplus rather than being added to true gross demand.
 
+## Demand-first presentation
+
+The displayed primary output is chosen from each automatic process’s actual net outputs. Demand includes explicit targets and downstream recipe inputs. Other physical sources and external supply are credited before comparing the remaining demand to this process’s output. The largest fraction drives the heading; ties prefer a positive explicit target, then an already-serving recipe owner, then a stable item-name order. Zero-valued targets do not create demand.
+
+This is a read-only projection, not another solve. For example, a solar-sail plan may obtain graphene from a fire-ice process that the optimizer recorded under hydrogen. That process is displayed under graphene, while its hydrogen is labeled as a coproduct. Its actual recipe, input rates, machines, power, and original editor identity remain unchanged. Recipe controls explicitly identify their original selection owner; factory and proliferation controls update the physical recipe that is running.
+
+Unused coproducts appear beside their producer and remain in global surplus statistics, without an empty top-level demand group. Their “＋ 产线” control can create an explicit independent source. Products with positive demand still retain their aggregate supply group and navigable source links. Manually allocated sources keep their user-selected targets, including zero allocations. The separately modeled shared orbital fleet retains its established physical owner and shared-count controls.
+
+The dependency tree uses the same source ownership. Unique physical supply can be scaled to a branch; pooled sources and cycles keep factory allocation unspecified. Coproduct badges shown in branch rows are labeled as global amounts. Distinct physical processes are never merged merely because they display the same primary product.
+
 ## Physical identity matters
 
 A coproduct link points to its actual producing source. Two explicit manual lines retain their distinct source IDs and represent two independent production runs, even if the recipe or output rates match. Their inputs, capacity and power are additive. Their factories are rounded per independent line; equal outputs alone do not justify merging partially loaded buildings.
@@ -47,3 +57,7 @@ Each product's aggregate known supply enters its transport estimate once, includ
 - `tests/mod-coproduct-audit.test.js`: supported mod chemistry, recycling and acquisition boundaries
 - `tests/coproduct-logistics-audit.test.js`: gross demand, source links, physical supply and conservative logistics
 - `tests/shared-orbital-collectors.test.js`: the explicit native H/D process
+
+- `tests/production-presentation.test.js`: demand-driven ownership and preserved physical flows
+- `tests/primary-output-ui.test.jsx`: actual recipe controls, coproduct placement, and target changes
+- `tests/dependency-primary-output.test.js`: branch capacity, pooling, cycles, and moved-source identity
